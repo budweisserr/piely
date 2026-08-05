@@ -47,9 +47,7 @@ pub fn run() {
         .manage(shortcuts::MoveWindowState::default())
         .manage(piely::PielyState::default())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_keychain::init())
         .plugin(tauri_plugin_shell::init()) // Add shell plugin
         .plugin(tauri_plugin_machine_uid::init());
     #[cfg(target_os = "macos")]

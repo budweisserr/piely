@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Card, Updater, DragButton, CustomCursor, Button } from "@/components";
+import { Card, DragButton, CustomCursor, Button, ErrorBoundary } from "@/components";
 import {
   SystemAudio,
   Completion,
@@ -10,7 +10,6 @@ import { useApp } from "@/hooks";
 import { useApp as useAppContext } from "@/contexts";
 import { SparklesIcon, KeyIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { ErrorBoundary } from "react-error-boundary";
 import { ErrorLayout } from "@/layouts";
 import { getPlatform } from "@/lib";
 
@@ -108,7 +107,6 @@ const App = () => {
             </div>
           )}
 
-          <Updater />
           <DragButton />
         </Card>
         {customizable.cursor.type === "invisible" && platform !== "linux" ? (

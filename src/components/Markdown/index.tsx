@@ -1,6 +1,5 @@
 import React from "react";
 import { Streamdown } from "streamdown";
-import "katex/dist/katex.min.css";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 interface MarkdownRendererProps {

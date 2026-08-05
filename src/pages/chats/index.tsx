@@ -2,10 +2,10 @@ import { Badge, Input, Card, Empty } from "@/components";
 import { useHistory } from "@/hooks";
 import { PageLayout } from "@/layouts";
 import { MessageCircleIcon, Search } from "lucide-react";
-import moment from "moment";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "@/contexts";
+import { formatDateKey, formatShortDate, formatTime } from "@/lib/utils";
 
 const Dashboard = () => {
   const conversations = useHistory();
@@ -21,7 +21,7 @@ const Dashboard = () => {
   // Group conversations by date
   const groupedConversations = conversations.conversations.reduce(
     (acc, doc) => {
-      const dateKey = moment(doc.updatedAt).format("YYYY-MM-DD");
+      const dateKey = formatDateKey(doc.updatedAt);
       if (!acc[dateKey]) {
         acc[dateKey] = [];
       }
@@ -32,8 +32,8 @@ const Dashboard = () => {
   );
 
   // Sort dates in descending order (most recent first)
-  const sortedDates = Object.keys(groupedConversations).sort((a, b) =>
-    moment(b).diff(moment(a))
+  const sortedDates = Object.keys(groupedConversations).sort(
+    (a, b) => new Date(b).getTime() - new Date(a).getTime()
   );
 
   return (
@@ -74,7 +74,7 @@ const Dashboard = () => {
               .map((dateKey) => (
                 <div key={dateKey} className="flex flex-col gap-3">
                   <p className="text-xs text-muted-foreground select-none font-medium">
-                    {moment(dateKey).format("ddd, MMM D")}
+                    {formatShortDate(new Date(dateKey).getTime())}
                   </p>
                   <div className="grid grid-cols-1 gap-3">
                     {groupedConversations[dateKey].map((doc) => (
@@ -92,7 +92,7 @@ const Dashboard = () => {
                               {doc.messages.length} messages
                             </Badge>
                             <Badge variant="outline" className="text-xs">
-                              {moment(doc.updatedAt).format("hh:mm A")}
+                              {formatTime(doc.updatedAt)}
                             </Badge>
                           </div>
                         </div>

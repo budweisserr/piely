@@ -20,11 +20,11 @@ import {
   Loader2,
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import moment from "moment";
 import { useParams, useNavigate } from "react-router-dom";
 import { PageLayout } from "@/layouts";
 import { useHistory, useChatCompletion } from "@/hooks";
 import { useApp } from "@/contexts";
+import { formatDateKey, formatShortDate, formatTime } from "@/lib/utils";
 import {
   DeleteConfirmationDialog,
   ChatAudio,
@@ -153,8 +153,8 @@ const View = () => {
             const isUser = message.role === "user";
             const showDate =
               index === 0 ||
-              moment(message.timestamp).format("YYYY-MM-DD") !==
-                moment(array[index - 1]?.timestamp).format("YYYY-MM-DD");
+              formatDateKey(message.timestamp) !==
+              formatDateKey(array[index - 1]!.timestamp);
 
             return (
               <div key={message.id}>
@@ -164,7 +164,7 @@ const View = () => {
                     variant={"outline"}
                     className="flex items-center justify-center my-4 w-fit mx-auto"
                   >
-                    {moment(message.timestamp).format("ddd, MMM D")}
+                    {formatShortDate(message.timestamp)}
                   </Badge>
                 )}
 
@@ -204,7 +204,7 @@ const View = () => {
                         isUser ? "-mr-1" : "-ml-1"
                       }`}
                     >
-                      {moment(message.timestamp).format("hh:mm A")}
+                      {formatTime(message.timestamp)}
                     </Badge>
                   </div>
 

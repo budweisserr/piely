@@ -1,8 +1,7 @@
-import { Sidebar } from "@/components";
+import { Sidebar, ErrorBoundary } from "@/components";
 import { STORAGE_KEYS } from "@/config";
 import { safeLocalStorage } from "@/lib";
 import { Navigate, Outlet } from "react-router-dom";
-import { ErrorBoundary } from "react-error-boundary";
 import { ErrorLayout } from "./ErrorLayout";
 
 export const DashboardLayout = () => {
