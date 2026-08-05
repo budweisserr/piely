@@ -79,9 +79,9 @@ impl Drop for ChildGuard {
 
 async fn run_simple(app: &AppHandle, cmd: &str, provider: Option<&str>) -> Result<Value, String> {
     let mut child = spawn_agent(app)?;
-    let _guard = ChildGuard(Some(child.try_clone().map_err(|e| e.to_string())?));
     let stdout = child.stdout.take().ok_or_else(|| "No agent stdout".to_string())?;
     let mut stdin = child.stdin.take();
+    let _guard = ChildGuard(Some(child));
 
     let mut request = serde_json::json!({ "id": 1, "cmd": cmd });
     if let Some(provider) = provider {
@@ -222,9 +222,9 @@ pub async fn piely_chat_stream(
     messages: String,
 ) -> Result<String, String> {
     let mut child = spawn_agent(&app)?;
-    let _guard = ChildGuard(Some(child.try_clone().map_err(|e| e.to_string())?));
     let stdout = child.stdout.take().ok_or_else(|| "No agent stdout".to_string())?;
     let mut stdin = child.stdin.take();
+    let _guard = ChildGuard(Some(child));
 
     let request = serde_json::json!({
         "id": 1,

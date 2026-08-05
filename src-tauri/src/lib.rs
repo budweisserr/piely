@@ -5,7 +5,9 @@ mod piely;
 mod shortcuts;
 mod window;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::Manager;
+#[cfg(target_os = "macos")]
+use tauri::{AppHandle, WebviewWindow};
 use tokio::task::JoinHandle;
 mod speaker;
 use capture::CaptureState;
