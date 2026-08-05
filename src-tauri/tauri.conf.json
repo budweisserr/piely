@@ -17,7 +17,7 @@
         "width": 600,
         "height": 20,
         "decorations": false,
-        "transparent": false,
+        "transparent": true,
         "alwaysOnTop": true,
         "resizable": false,
         "visibleOnAllWorkspaces": true,

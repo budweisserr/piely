@@ -240,7 +240,7 @@ const View = () => {
               <AudioRecorder
                 onTranscriptionComplete={(text) => {
                   completion.setIsRecording(false);
-                  completion.submit(text);
+                  completion.setInput(text);
                 }}
                 onCancel={() => completion.setIsRecording(false)}
               />
