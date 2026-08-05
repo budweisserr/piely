@@ -26,6 +26,7 @@ template (settings → Dev Space).
 - Node.js >= 22.19 (for the pi-ai sidecar and the frontend toolchain)
 - Rust (stable) with the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
   for your OS (Linux: webkit2gtk-4.1, libappindicator, etc.)
+- CMake + C/C++ compiler (for whisper.cpp, the local speech-to-text engine)
 - macOS: Xcode command line tools; Windows: MSVC build tools
 
 ## Build
@@ -38,15 +39,31 @@ template (settings → Dev Space).
 ./build.sh dev
 ```
 
-The script installs dependencies (frontend + pi sidecar) and runs the Tauri
+The script installs dependencies (frontend + pi sidecar), builds whisper.cpp,
+downloads the Whisper `base` model (~75 MB) if missing, and runs the Tauri
 build. Equivalent manual steps:
 
 ```bash
 npm install
 cd piely-agent && npm install && cd ..
+
+# whisper.cpp local STT
+cmake -S whisper.cpp -B whisper.cpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF
+cmake --build whisper.cpp/build --config Release -j
+(cd whisper.cpp/models && bash download-ggml-model.sh base)
+
 npm run tauri dev      # development
 npm run tauri build    # release bundles
 ```
+
+### Local speech-to-text (whisper.cpp)
+
+Pick **Local Whisper (whisper.cpp)** as your STT provider (Dev Space or the
+first-launch wizard) and all voice input is transcribed on-device — no data
+leaves your machine. The default model is `whisper.cpp/models/ggml-base.bin`
+(downloaded by `build.sh`); set the provider's `MODEL_PATH` variable to use
+a different ggml model, or point `WHISPER_CLI_PATH` at your own whisper-cli
+binary.
 
 Optional environment variables:
 

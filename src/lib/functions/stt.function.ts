@@ -4,6 +4,7 @@ import {
   blobToBase64,
 } from "./common.function";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import { invoke } from "@tauri-apps/api/core";
 
 import { TYPE_PROVIDER } from "@/types";
 import curl2Json from "@bany/curl-to-json";
@@ -18,6 +19,23 @@ export interface STTParams {
 }
 
 /**
+ * Transcribe with local whisper.cpp (built by build.sh). Runs entirely on-device.
+ */
+async function transcribeLocalWhisper(audio: File | Blob, modelPath: string): Promise<string> {
+  try {
+    const audioBase64 = await blobToBase64(audio);
+    const transcription = await invoke<string>("local_transcribe", {
+      audioBase64,
+      modelPath: modelPath || null,
+    });
+    return transcription;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return `Local Whisper Error: ${errorMessage}`;
+  }
+}
+
+/**
  * Transcribes audio and returns either the transcription or an error/warning message as a single string.
  */
 export async function fetchSTT(params: STTParams): Promise<string> {
@@ -27,6 +45,15 @@ export async function fetchSTT(params: STTParams): Promise<string> {
     const { provider, selectedProvider, audio } = params;
 
     if (!provider) throw new Error("Provider not provided");
+
+    // Local whisper.cpp runs entirely on-device, no curl request
+    if (provider.id === "whisper-local") {
+      return await transcribeLocalWhisper(
+        audio,
+        selectedProvider.variables?.["MODEL_PATH"] ?? ""
+      );
+    }
+
     if (!selectedProvider) throw new Error("Selected provider not provided");
     if (!audio) throw new Error("Audio file is required");
 

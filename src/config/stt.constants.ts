@@ -1,5 +1,14 @@
 export const SPEECH_TO_TEXT_PROVIDERS = [
   {
+    id: "whisper-local",
+    name: "Local Whisper (whisper.cpp)",
+    // Dummy curl: only used to surface the MODEL_PATH variable in the UI.
+    // fetchSTT routes whisper-local through the Rust whisper.cpp bridge.
+    curl: `whisper-cli -m "{{MODEL_PATH}}" -f "{{AUDIO}}"`,
+    responseContentPath: "text",
+    streaming: false,
+  },
+  {
     id: "openai-whisper",
     name: "OpenAI Whisper",
     curl: `curl -X POST "https://api.openai.com/v1/audio/transcriptions" \\

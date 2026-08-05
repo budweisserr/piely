@@ -3,6 +3,7 @@ mod capture;
 mod db;
 mod piely;
 mod shortcuts;
+mod whisper;
 mod window;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -79,6 +80,7 @@ pub fn run() {
             piely::piely_login_answer,
             piely::piely_logout,
             piely::piely_chat_stream,
+            whisper::local_transcribe,
             speaker::start_system_audio_capture,
             speaker::stop_system_audio_capture,
             speaker::manual_stop_continuous,

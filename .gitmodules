@@ -1,3 +1,6 @@
 [submodule "pi"]
 	path = pi
 	url = https://github.com/earendil-works/pi.git
+[submodule "whisper.cpp"]
+	path = whisper.cpp
+	url = https://github.com/ggml-org/whisper.cpp.git
