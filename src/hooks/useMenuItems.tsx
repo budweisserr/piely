@@ -77,15 +77,8 @@ export const useMenuItems = () => {
     },
   ];
 
-  const footerLinks: {
-    title: string;
-    icon: React.ElementType;
-    link: string;
-  }[] = [];
-
   return {
     menu,
     footerItems,
-    footerLinks,
   };
 };

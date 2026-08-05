@@ -1,13 +1,11 @@
 import { SparklesIcon } from "lucide-react";
-import { Button } from "@/components";
 import { cn } from "@/lib/utils";
 import { useLocation, useNavigate } from "react-router-dom";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useMenuItems, useVersion } from "@/hooks";
 
 export const Sidebar = () => {
   const { version, isLoading } = useVersion();
-  const { menu, footerLinks, footerItems } = useMenuItems();
+  const { menu, footerItems } = useMenuItems();
 
   const navigate = useNavigate();
   const activeRoute = useLocation().pathname;
@@ -58,20 +56,6 @@ export const Sidebar = () => {
       </nav>
 
       <div className="flex flex-col space-y-1 px-3  pb-3">
-        <div className="flex flex-row justify-evenly items-center gap-2 mb-3">
-          {footerLinks.map((item, index) => (
-            <Button
-              key={`${item.title}-${index}`}
-              title={item.title}
-              size="sm"
-              variant="outline"
-              onClick={() => openUrl(item.link)}
-            >
-              <item.icon className="size-3 lg:size-4 transition-all duration-300" />
-            </Button>
-          ))}
-        </div>
-
         {footerItems.map((item, index) => (
           <button
             key={`${item.label}-${index}`}

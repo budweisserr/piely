@@ -218,16 +218,6 @@ export const PielyProviderLogin = () => {
                         onChange={(e) =>
                           handleSelectModel(provider.id, e.target.value)
                         }
-                        onClick={() => {
-                          if (!models.length) {
-                            pielyGetModels(provider.id).then((m) =>
-                              setModelsByProvider((prev) => ({
-                                ...prev,
-                                [provider.id]: m,
-                              }))
-                            );
-                          }
-                        }}
                       >
                         <option value="" disabled>
                           Select a model...

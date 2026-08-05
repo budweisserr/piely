@@ -46,35 +46,3 @@ export const floatArrayToWav = (
 
   return new Blob([buffer], { type: `audio/${format}` });
 };
-
-/**
- * Decode any browser-recorded audio (webm/ogg from MediaRecorder) and
- * re-encode it as a 16 kHz mono 16-bit WAV, which whisper.cpp and other
- * STT backends expect.
- */
-export const blobToWav16k = async (blob: Blob): Promise<Blob> => {
-  const arrayBuffer = await blob.arrayBuffer();
-  const AudioContext: typeof window.AudioContext =
-    window.AudioContext ||
-    (window as unknown as { webkitAudioContext: typeof window.AudioContext })
-      .webkitAudioContext;
-  const ctx = new AudioContext();
-  let audioBuffer: AudioBuffer;
-  try {
-    audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-  } finally {
-    await ctx.close();
-  }
-
-  const targetRate = 16000;
-  const ratio = audioBuffer.sampleRate / targetRate;
-  const outLength = Math.round(audioBuffer.length / ratio);
-  const offline = new OfflineAudioContext(1, outLength, targetRate);
-  const source = offline.createBufferSource();
-  source.buffer = audioBuffer;
-  source.connect(offline.destination);
-  source.start(0);
-  const rendered = await offline.startRendering();
-
-  return floatArrayToWav(rendered.getChannelData(0), targetRate, "wav");
-};
