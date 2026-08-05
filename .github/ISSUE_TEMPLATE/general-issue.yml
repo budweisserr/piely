@@ -1,23 +1,27 @@
-name: ❓ General Issue
-description: For questions, discussions, or issues that don't fit other categories
+name: General Issue
+description: Questions, discussions, or anything that does not fit the other templates
 title: "[GENERAL] "
 labels: ["question"]
 body:
   - type: markdown
     attributes:
       value: |
-        ## ❓ General Issue
+        ## General Issue
 
-        **Before submitting:**
-        - [x] I have searched for similar issues and didn't find a duplicate
-        - [x] I have read the README and documentation
-        - [x] I have searched for similar questions/issues
+        Before submitting:
+        - Read the README and the [wiki](https://github.com/budweisserr/piely/wiki) first.
+        - Search for an existing issue covering the same topic.
 
   - type: textarea
     id: description
     attributes:
-      label: Description
-      description: Please describe your question or issue
-      placeholder: "Describe what you need help with..."
+      label: What is it about
+      description: State your question or the topic you want to discuss clearly and concisely.
     validations:
       required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Anything relevant that helps understand the question. This is optional.
