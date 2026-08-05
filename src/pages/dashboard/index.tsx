@@ -1,4 +1,4 @@
-import { PielyProviderLogin } from "./components";
+import { PielyProviderLogin } from "@/components";
 import { PageLayout } from "@/layouts";
 
 const Dashboard = () => {

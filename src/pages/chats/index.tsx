@@ -3,11 +3,21 @@ import { useHistory } from "@/hooks";
 import { PageLayout } from "@/layouts";
 import { MessageCircleIcon, Search } from "lucide-react";
 import moment from "moment";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useApp } from "@/contexts";
 
 const Dashboard = () => {
   const conversations = useHistory();
   const navigate = useNavigate();
+  const { selectedAIProvider, pielySelection } = useApp();
+
+  // No provider connected: send the user to the login page
+  useEffect(() => {
+    if (!pielySelection && !selectedAIProvider.provider) {
+      navigate("/dashboard");
+    }
+  }, [pielySelection, selectedAIProvider.provider, navigate]);
   // Group conversations by date
   const groupedConversations = conversations.conversations.reduce(
     (acc, doc) => {

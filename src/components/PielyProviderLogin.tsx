@@ -3,8 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { KeyIcon, LogOutIcon, LoaderIcon, ExternalLinkIcon } from "lucide-react";
 import { useApp } from "@/contexts";
-import {
-  Header,
+import { Header } from "./Header";import {
   Button,
   Input,
   Badge,
@@ -13,7 +12,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components";
+} from "./ui";
 import {
   pielyListProviders,
   pielyGetModels,
