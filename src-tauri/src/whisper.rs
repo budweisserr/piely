@@ -63,7 +63,7 @@ pub async fn local_transcribe(
         ])
         .output();
 
-    let transcript = match result {
+    let transcript: Result<String, String> = match result {
         Ok(output) if output.status.success() => {
             let json_text = std::fs::read_to_string(&tmp_json)
                 .map_err(|e| format!("Failed to read whisper output: {}", e))?;
@@ -79,7 +79,7 @@ pub async fn local_transcribe(
                         .collect()
                 })
                 .unwrap_or_default();
-            texts.join(" ").trim().to_string()
+            Ok(texts.join(" ").trim().to_string())
         }
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr);
