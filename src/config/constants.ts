@@ -15,6 +15,7 @@ export const STORAGE_KEYS = {
   CUSTOMIZABLE: "customizable",
   PIELY_SELECTED_PROVIDER: "piely_selected_provider",
   PIELY_SELECTED_MODEL: "piely_selected_model",
+  PIELY_SETUP_COMPLETE: "piely_setup_complete",
   SHORTCUTS: "shortcuts",
   AUTOSTART_INITIALIZED: "autostart_initialized",
 

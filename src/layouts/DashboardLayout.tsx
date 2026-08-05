@@ -1,9 +1,16 @@
 import { Sidebar } from "@/components";
-import { Outlet } from "react-router-dom";
+import { STORAGE_KEYS } from "@/config";
+import { safeLocalStorage } from "@/lib";
+import { Navigate, Outlet } from "react-router-dom";
 import { ErrorBoundary } from "react-error-boundary";
 import { ErrorLayout } from "./ErrorLayout";
 
 export const DashboardLayout = () => {
+  // First launch: run the setup wizard before showing any dashboard page
+  if (safeLocalStorage.getItem(STORAGE_KEYS.PIELY_SETUP_COMPLETE) !== "true") {
+    return <Navigate to="/setup" replace />;
+  }
+
   return (
     <ErrorBoundary
       fallbackRender={() => {
