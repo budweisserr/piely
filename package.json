@@ -1,7 +1,7 @@
 {
   "name": "piely",
   "private": false,
-  "version": "0.1.9",
+  "version": "0.1.0",
   "description": "A privacy-first, local-first AI assistant overlay for meetings, interviews, and conversations.",
   "license": "GPL-3.0",
   "type": "module",
