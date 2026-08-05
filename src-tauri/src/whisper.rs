@@ -52,6 +52,8 @@ pub async fn local_transcribe(
     }
 
     let result = Command::new(whisper_cli_path())
+        // -t: use all cores (whisper.cpp defaults to 4); -fa: flash attention
+        // (Metal/CUDA speedup, safe fallback elsewhere)
         .args([
             "-m",
             model.to_str().ok_or("Invalid model path")?,
@@ -60,6 +62,12 @@ pub async fn local_transcribe(
             "-oj",
             "-nt",
             "-np",
+            "-t",
+            &std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+                .to_string(),
+            "-fa",
         ])
         .output();
 
