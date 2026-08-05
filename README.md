@@ -76,6 +76,12 @@ The updater plugin is configured without endpoints; point
 `src-tauri/tauri.conf.json` → `plugins.updater.endpoints` at your own update
 server to enable self-updates.
 
+## Documentation
+
+The full documentation lives in the [GitHub wiki](https://github.com/budweisserr/piely/wiki):
+getting started, Ask/Listen modes, AI providers, speech to text, settings,
+shortcuts, privacy, and troubleshooting.
+
 ## Project layout
 
 - `src/` — React frontend
