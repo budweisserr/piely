@@ -50,7 +50,7 @@ cd piely-agent && npm install && cd ..
 # whisper.cpp local STT
 cmake -S whisper.cpp -B whisper.cpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF
 cmake --build whisper.cpp/build --config Release -j
-(cd whisper.cpp/models && bash download-ggml-model.sh base)
+(cd whisper.cpp/models && bash download-ggml-model.sh tiny)
 
 npm run tauri dev      # development
 npm run tauri build    # release bundles
@@ -60,10 +60,10 @@ npm run tauri build    # release bundles
 
 Pick **Local Whisper (whisper.cpp)** as your STT provider (Dev Space or the
 first-launch wizard) and all voice input is transcribed on-device — no data
-leaves your machine. The default model is `whisper.cpp/models/ggml-base.bin`
-(downloaded by `build.sh`); set the provider's `MODEL_PATH` variable to use
-a different ggml model, or point `WHISPER_CLI_PATH` at your own whisper-cli
-binary.
+leaves your machine. The default model is `whisper.cpp/models/ggml-tiny.bin`
+(the smallest and fastest, downloaded by `build.sh`); set the provider's
+`MODEL_PATH` variable to use a different ggml model, or point
+`WHISPER_CLI_PATH` at your own whisper-cli binary.
 
 Optional environment variables:
 

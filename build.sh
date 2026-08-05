@@ -19,10 +19,10 @@ cmake -S whisper.cpp -B whisper.cpp/build \
   -DWHISPER_BUILD_TESTS=OFF
 cmake --build whisper.cpp/build --config Release -j"$(nproc 2>/dev/null || echo 2)"
 
-WHISPER_MODEL="whisper.cpp/models/ggml-base.bin"
+WHISPER_MODEL="whisper.cpp/models/ggml-tiny.bin"
 if [ ! -f "$WHISPER_MODEL" ]; then
-  echo "==> Downloading Whisper base model (~75 MB) to $WHISPER_MODEL"
-  (cd whisper.cpp/models && bash download-ggml-model.sh base)
+  echo "==> Downloading Whisper tiny model (~75 MB) to $WHISPER_MODEL"
+  (cd whisper.cpp/models && bash download-ggml-model.sh tiny)
 fi
 
 if [ "$MODE" = "dev" ]; then

@@ -19,11 +19,11 @@ fn whisper_cli_path() -> PathBuf {
 }
 
 fn default_model_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../whisper.cpp/models/ggml-base.bin")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../whisper.cpp/models/ggml-tiny.bin")
 }
 
 /// Transcribe a wav (base64) with local whisper.cpp.
-/// `model_path` is the ggml .bin file; empty = default (ggml-base.bin).
+/// `model_path` is the ggml .bin file; empty = default (ggml-tiny.bin).
 #[tauri::command]
 pub async fn local_transcribe(
     audio_base64: String,
