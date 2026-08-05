@@ -54,9 +54,9 @@ export const floatArrayToWav = (
  */
 export const blobToWav16k = async (blob: Blob): Promise<Blob> => {
   const arrayBuffer = await blob.arrayBuffer();
-  const AudioContext =
+  const AudioContext: typeof window.AudioContext =
     window.AudioContext ||
-    (window as unknown as { webkitAudioContext: typeof AudioContext })
+    (window as unknown as { webkitAudioContext: typeof window.AudioContext })
       .webkitAudioContext;
   const ctx = new AudioContext();
   let audioBuffer: AudioBuffer;

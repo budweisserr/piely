@@ -37,7 +37,7 @@ export default function Setup() {
   const selectVoiceProvider = (provider: TYPE_PROVIDER) => {
     setVoiceProvider(provider);
     setVoiceValues({});
-    onSetSelectedSttProvider({ provider: provider.id, variables: {} });
+    onSetSelectedSttProvider({ provider: provider.id!, variables: {} });
   };
 
   const voiceVariables = voiceProvider
@@ -53,7 +53,7 @@ export default function Setup() {
     const next = { ...voiceValues, [key]: value };
     setVoiceValues(next);
     onSetSelectedSttProvider({
-      provider: voiceProvider!.id,
+      provider: voiceProvider!.id!,
       variables: next,
     });
   };

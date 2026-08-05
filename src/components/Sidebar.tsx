@@ -73,12 +73,10 @@ export const Sidebar = () => {
         </div>
 
         {footerItems.map((item, index) => (
-          <a
-            href={item.href}
-            onClick={item.action}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
             key={`${item.label}-${index}`}
+            type="button"
+            onClick={item.action}
             className={cn(
               "flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-xs lg:text-sm text-sidebar-foreground/70 transition-all duration-300 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             )}
@@ -87,7 +85,7 @@ export const Sidebar = () => {
               <item.icon className="size-3 lg:size-4 transition-all duration-300" />
               {item.label}
             </div>
-          </a>
+          </button>
         ))}
       </div>
     </aside>

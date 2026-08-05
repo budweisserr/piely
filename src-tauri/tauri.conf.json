@@ -15,9 +15,9 @@
       {
         "title": "Piely - AI Assistant",
         "width": 600,
-        "height": 54,
+        "height": 20,
         "decorations": false,
-        "transparent": true,
+        "transparent": false,
         "alwaysOnTop": true,
         "resizable": false,
         "visibleOnAllWorkspaces": true,

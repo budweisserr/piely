@@ -9,6 +9,7 @@ import {
   Input,
   Textarea,
 } from "@/components";
+import { SparklesIcon } from "lucide-react";
 
 interface CreateEditDialogProps {
   isOpen: boolean;

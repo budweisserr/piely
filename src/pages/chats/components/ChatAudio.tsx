@@ -17,8 +17,8 @@ export const ChatAudio = ({
   setIsRecording,
   disabled,
 }: ChatAudioProps) => {
-  const { selectedSttProvider, pielyApiEnabled } = useApp();
-  const isProviderConfigured = pielyApiEnabled || selectedSttProvider.provider;
+  const { selectedSttProvider } = useApp();
+  const isProviderConfigured = !!selectedSttProvider.provider;
 
   const handleMicClick = () => {
     if (!isProviderConfigured) {

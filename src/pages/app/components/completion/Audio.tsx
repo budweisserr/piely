@@ -12,15 +12,14 @@ export const Audio = ({
   submit,
   setState,
 }: UseCompletionReturn) => {
-  const { selectedSttProvider, pielyApiEnabled, selectedAudioDevices } =
-    useApp();
+  const { selectedSttProvider, selectedAudioDevices } = useApp();
 
   const speechProviderStatus = selectedSttProvider.provider;
 
   return (
     <Popover open={micOpen} onOpenChange={setMicOpen}>
       <PopoverTrigger asChild>
-        {(pielyApiEnabled || speechProviderStatus) && enableVAD ? (
+        {speechProviderStatus && enableVAD ? (
           <AutoSpeechVAD
             key={selectedAudioDevices.input.id}
             submit={submit}
@@ -46,7 +45,7 @@ export const Audio = ({
         align="end"
         side="bottom"
         className={`w-80 p-3 ${
-          pielyApiEnabled || speechProviderStatus ? "hidden" : ""
+          speechProviderStatus ? "hidden" : ""
         }`}
         sideOffset={8}
       >
