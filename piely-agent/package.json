@@ -1,0 +1,13 @@
+{
+  "name": "piely-agent",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Piely sidecar: pi (earendil-works/pi) login + providers powering Piely LLM responses",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "^0.83.0"
+  }
+}

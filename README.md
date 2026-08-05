@@ -1,0 +1,67 @@
+# Piely
+
+A privacy-first, local-first AI assistant: a translucent overlay with **Ask**
+and **Listen** modes, plus a dashboard for chats, meetings, files, prompts,
+and settings. Built with Tauri 2, React, and Rust.
+
+## LLM powered by pi
+
+LLM responses are powered by [pi](https://github.com/earendil-works/pi), the
+open-source coding agent. Piely embeds pi's unified LLM API
+(`@earendil-works/pi-ai`) as a sidecar (`piely-agent/`) and exposes pi's
+provider login + model catalog in the **Dashboard**: log in with an OAuth
+subscription (Anthropic Claude, ChatGPT/Codex, GitHub Copilot, OpenRouter) or
+an API key (OpenAI, Google, Groq, Mistral, xAI, DeepSeek, ...), pick a model,
+and every chat, screenshot, and auto-response streams through pi.
+
+The pi coding agent source is pinned as a git submodule at [`pi/`](pi)
+(`packages/agent`, `packages/ai`, `packages/client`). Credentials are stored
+in the app data directory (`piely-auth.json`), one credential per provider.
+
+Alternatively, connect any LLM or speech-to-text provider through a curl
+template (settings → Dev Space).
+
+## Requirements
+
+- Node.js >= 22.19 (for the pi-ai sidecar and the frontend toolchain)
+- Rust (stable) with the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
+  for your OS (Linux: webkit2gtk-4.1, libappindicator, etc.)
+- macOS: Xcode command line tools; Windows: MSVC build tools
+
+## Build
+
+```bash
+# 1. Frontend + Rust dependencies
+npm install
+
+# 2. pi sidecar dependencies (pi-ai)
+cd piely-agent && npm install && cd ..
+
+# 3. Run in development
+npm run tauri dev
+
+# 4. Build release bundles (.dmg/.msi/.exe/.deb/.rpm/.AppImage)
+npm run tauri build
+```
+
+Optional environment variables:
+
+| Variable          | Purpose                                          |
+| ----------------- | ------------------------------------------------ |
+| `PIELY_NODE_BIN`  | Node binary for the pi sidecar (default `node`)  |
+| `PIELY_AGENT_PATH`| Path to `piely-agent/agent.mjs` if not alongside |
+
+The updater plugin is configured without endpoints; point
+`src-tauri/tauri.conf.json` → `plugins.updater.endpoints` at your own update
+server to enable self-updates.
+
+## Project layout
+
+- `src/` — React frontend
+- `src-tauri/` — Rust backend (window, capture, audio, shortcuts, pi bridge)
+- `piely-agent/` — Node sidecar wrapping `@earendil-works/pi-ai`
+- `pi/` — pi coding agent source (submodule)
+
+## License
+
+GPL-3.0 — see [LICENSE](LICENSE).
