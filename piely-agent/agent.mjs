@@ -8,7 +8,7 @@
 //
 // Credentials are persisted to --auth-file (auth.json, same shape as pi's CLI).
 import { readFile, rename, writeFile } from "node:fs/promises";
-import { builtinModels, builtinProviders } from "@earendil-works/pi-ai";
+import { builtinModels, builtinProviders } from "@earendil-works/pi-ai/providers/all";
 
 const args = process.argv.slice(2);
 const authFlag = args.indexOf("--auth-file");
@@ -90,8 +90,13 @@ const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
 const answerResolvers = new Map(); // request id -> resolve(value)
 
 function send(msg) {
-  process.stdout.write(`${JSON.stringify(msg)}\n`);
+  try {
+    process.stdout.write(`${JSON.stringify(msg)}\n`);
+  } catch {
+    process.exit(0); // parent (Rust side) gone
+  }
 }
+process.stdout.on("error", () => process.exit(0));
 
 function answerFor(id, value) {
   const resolve = answerResolvers.get(id);
