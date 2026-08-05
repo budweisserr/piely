@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # Frontend + Tauri toolchain
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    target-branch: "develop"
+
+  # pi sidecar
+  - package-ecosystem: "npm"
+    directory: "/piely-agent"
+    schedule:
+      interval: "weekly"
+    target-branch: "develop"
+
+  # Rust backend
+  - package-ecosystem: "cargo"
+    directory: "/src-tauri"
+    schedule:
+      interval: "weekly"
+    target-branch: "develop"
+
+  # pi and whisper.cpp submodules
+  - package-ecosystem: "gitsubmodule"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    target-branch: "develop"
