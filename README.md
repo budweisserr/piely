@@ -31,17 +31,21 @@ template (settings → Dev Space).
 ## Build
 
 ```bash
-# 1. Frontend + Rust dependencies
+# Build release bundles (.dmg/.msi/.exe/.deb/.rpm/.AppImage)
+./build.sh
+
+# Run in development
+./build.sh dev
+```
+
+The script installs dependencies (frontend + pi sidecar) and runs the Tauri
+build. Equivalent manual steps:
+
+```bash
 npm install
-
-# 2. pi sidecar dependencies (pi-ai)
 cd piely-agent && npm install && cd ..
-
-# 3. Run in development
-npm run tauri dev
-
-# 4. Build release bundles (.dmg/.msi/.exe/.deb/.rpm/.AppImage)
-npm run tauri build
+npm run tauri dev      # development
+npm run tauri build    # release bundles
 ```
 
 Optional environment variables:
