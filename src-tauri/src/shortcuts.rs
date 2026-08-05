@@ -300,9 +300,6 @@ pub fn update_shortcuts<R: Runtime>(
     for (action_id, binding) in &config.bindings {
         if binding.enabled && !binding.key.is_empty() {
             if action_id == "move_window" {
-                eprintln!("Registering move_window shortcut");
-            }
-
                 let modifiers = binding.key.trim();
                 if modifiers.is_empty() {
                     continue;
