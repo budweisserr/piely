@@ -25,6 +25,14 @@ if [ ! -f "$WHISPER_MODEL" ]; then
   (cd whisper.cpp/models && bash download-ggml-model.sh tiny)
 fi
 
+# Stage whisper-cli for bundling (externalBin naming: <name>-<target-triple>)
+if command -v rustc >/dev/null 2>&1 && [ -f whisper.cpp/build/bin/whisper-cli ]; then
+  mkdir -p src-tauri/binaries
+  TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+  cp whisper.cpp/build/bin/whisper-cli "src-tauri/binaries/whisper-cli-$TRIPLE"
+  echo "==> Staged whisper-cli-$TRIPLE for bundling"
+fi
+
 if [ "$MODE" = "dev" ]; then
   echo "==> Starting development build"
   npm run tauri dev

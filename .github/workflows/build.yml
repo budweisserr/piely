@@ -1,0 +1,71 @@
+name: Build
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev libpulse-dev
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Build whisper.cpp
+        run: |
+          cmake -S whisper.cpp -B whisper.cpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_EXAMPLES=ON -DWHISPER_BUILD_TESTS=OFF
+          cmake --build whisper.cpp/build --config Release
+
+      - name: Stage whisper-cli for bundling
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+          if [ -f whisper.cpp/build/bin/Release/whisper-cli.exe ]; then
+            cp whisper.cpp/build/bin/Release/whisper-cli.exe "src-tauri/binaries/whisper-cli-$TRIPLE.exe"
+          else
+            cp whisper.cpp/build/bin/whisper-cli "src-tauri/binaries/whisper-cli-$TRIPLE"
+          fi
+
+      - name: Build with Tauri
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: piely-${{ matrix.platform }}
+          if-no-files-found: warn
+          path: |
+            src-tauri/target/release/bundle/**/*.dmg
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.rpm
+            src-tauri/target/release/bundle/**/*.AppImage

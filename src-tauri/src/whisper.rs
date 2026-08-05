@@ -11,6 +11,17 @@ fn whisper_cli_path() -> PathBuf {
     if let Ok(path) = env::var("WHISPER_CLI_PATH") {
         return PathBuf::from(path);
     }
+    // bundled sidecar (externalBin): next to the app executable
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+    {
+        let name = if cfg!(windows) { "whisper-cli.exe" } else { "whisper-cli" };
+        let bundled = dir.join(name);
+        if bundled.exists() {
+            return bundled;
+        }
+    }
     let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../whisper.cpp/build/bin/whisper-cli");
     if dev_path.exists() {
         return dev_path;

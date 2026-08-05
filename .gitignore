@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Staged sidecar binaries (built by build.sh / CI)
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep

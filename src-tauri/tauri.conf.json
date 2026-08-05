@@ -48,6 +48,7 @@
       "info.plist",
       "piely.desktop"
     ],
+    "externalBin": ["binaries/whisper-cli"],
     "macOS": {
       "minimumSystemVersion": "10.13"
     }
