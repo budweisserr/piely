@@ -19,6 +19,10 @@ A privacy-first, local-first AI assistant: a translucent always-on-top overlay w
 
 Everything else — first-launch setup, Ask/Listen modes, AI providers, speech to text, settings, shortcuts, privacy, troubleshooting — lives in the [wiki](https://github.com/budweisserr/piely/wiki).
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) — contributions (including AI-assisted ones) are welcome.
+
 ## License
 
 GPL-3.0 — see [LICENSE](LICENSE).
