@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components";
 import { AudioVisualizer } from "@/pages/app/components/speech/audio-visualizer";
 import { fetchSTT } from "@/lib";
+import { blobToWav16k } from "@/lib/utils";
 import { useApp } from "@/contexts";
 import { StopCircle, Send } from "lucide-react";
 
@@ -153,10 +154,16 @@ export const AudioRecorder = ({
         (p) => p.id === selectedSttProvider.provider
       );
 
+      // whisper.cpp needs wav; MediaRecorder records webm/ogg
+      const audio =
+        provider?.id === "whisper-local"
+          ? await blobToWav16k(audioBlob)
+          : audioBlob;
+
       const text = await fetchSTT({
         provider,
         selectedProvider: selectedSttProvider,
-        audio: audioBlob,
+        audio,
       });
 
       onTranscriptionComplete(text);
