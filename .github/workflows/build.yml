@@ -27,6 +27,8 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      - uses: oven-sh/setup-bun@v2
+
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
@@ -41,7 +43,12 @@ jobs:
           cmake -S whisper.cpp -B whisper.cpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_EXAMPLES=ON -DWHISPER_BUILD_TESTS=OFF
           cmake --build whisper.cpp/build --config Release
 
-      - name: Stage whisper-cli for bundling
+      - name: Compile pi sidecar (bun)
+        run: |
+          bun install --cwd piely-agent
+          bun build --compile piely-agent/agent.mjs --outfile piely-agent/bin/piely-agent
+
+      - name: Stage sidecars for bundling
         shell: bash
         run: |
           mkdir -p src-tauri/binaries
@@ -50,6 +57,11 @@ jobs:
             cp whisper.cpp/build/bin/Release/whisper-cli.exe "src-tauri/binaries/whisper-cli-$TRIPLE.exe"
           else
             cp whisper.cpp/build/bin/whisper-cli "src-tauri/binaries/whisper-cli-$TRIPLE"
+          fi
+          if [ -f piely-agent/bin/piely-agent.exe ]; then
+            cp piely-agent/bin/piely-agent.exe "src-tauri/binaries/piely-agent-$TRIPLE.exe"
+          else
+            cp piely-agent/bin/piely-agent "src-tauri/binaries/piely-agent-$TRIPLE"
           fi
 
       - name: Build with Tauri

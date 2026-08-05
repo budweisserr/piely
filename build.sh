@@ -25,12 +25,26 @@ if [ ! -f "$WHISPER_MODEL" ]; then
   (cd whisper.cpp/models && bash download-ggml-model.sh tiny)
 fi
 
-# Stage whisper-cli for bundling (externalBin naming: <name>-<target-triple>)
-if command -v rustc >/dev/null 2>&1 && [ -f whisper.cpp/build/bin/whisper-cli ]; then
+# Compile the pi sidecar into a single self-contained binary (no Node needed).
+# Fallback at runtime: node + agent.mjs.
+if command -v bun >/dev/null 2>&1; then
+  mkdir -p piely-agent/bin
+  bun build --compile piely-agent/agent.mjs --outfile piely-agent/bin/piely-agent
+  echo "==> Compiled pi sidecar (bun)"
+fi
+
+# Stage sidecars for bundling (externalBin naming: <name>-<target-triple>)
+if command -v rustc >/dev/null 2>&1; then
   mkdir -p src-tauri/binaries
   TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
-  cp whisper.cpp/build/bin/whisper-cli "src-tauri/binaries/whisper-cli-$TRIPLE"
-  echo "==> Staged whisper-cli-$TRIPLE for bundling"
+  if [ -f whisper.cpp/build/bin/whisper-cli ]; then
+    cp whisper.cpp/build/bin/whisper-cli "src-tauri/binaries/whisper-cli-$TRIPLE"
+    echo "==> Staged whisper-cli-$TRIPLE for bundling"
+  fi
+  if [ -f piely-agent/bin/piely-agent ]; then
+    cp piely-agent/bin/piely-agent "src-tauri/binaries/piely-agent-$TRIPLE"
+    echo "==> Staged piely-agent-$TRIPLE for bundling"
+  fi
 fi
 
 if [ "$MODE" = "dev" ]; then

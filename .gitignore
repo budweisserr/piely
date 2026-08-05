@@ -26,3 +26,6 @@ dist-ssr
 # Staged sidecar binaries (built by build.sh / CI)
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
+
+# Bun-compiled pi sidecar (local dev)
+piely-agent/bin/

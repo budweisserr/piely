@@ -34,6 +34,37 @@ fn agent_path() -> Result<PathBuf, String> {
     Err("piely-agent/agent.mjs not found. Set PIELY_AGENT_PATH or install the agent.".to_string())
 }
 
+/// Resolve the pi sidecar as (program, args-before-auth-file):
+/// 1. PIELY_AGENT_PATH override (compiled binary, or .mjs/.js script run with node)
+/// 2. bundled sidecar next to the app executable (externalBin)
+/// 3. dev-compiled binary (piely-agent/bin)
+/// 4. agent.mjs with node
+fn agent_command() -> Result<(String, Vec<String>), String> {
+    if let Ok(path) = env::var("PIELY_AGENT_PATH") {
+        if path.ends_with(".mjs") || path.ends_with(".js") {
+            let node = env::var("PIELY_NODE_BIN").unwrap_or_else(|_| "node".to_string());
+            return Ok((node, vec![path]));
+        }
+        return Ok((path, vec![]));
+    }
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+    {
+        let name = if cfg!(windows) { "piely-agent.exe" } else { "piely-agent" };
+        let bundled = dir.join(name);
+        if bundled.exists() {
+            return Ok((bundled.to_string_lossy().into_owned(), vec![]));
+        }
+    }
+    let dev_bin = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../piely-agent/bin/piely-agent");
+    if dev_bin.exists() {
+        return Ok((dev_bin.to_string_lossy().into_owned(), vec![]));
+    }
+    let node = env::var("PIELY_NODE_BIN").unwrap_or_else(|_| "node".to_string());
+    Ok((node, vec![agent_path()?.to_string_lossy().into_owned()]))
+}
+
 fn auth_file(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
@@ -45,9 +76,9 @@ fn auth_file(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn spawn_agent(app: &AppHandle) -> Result<Child, String> {
-    let node = env::var("PIELY_NODE_BIN").unwrap_or_else(|_| "node".to_string());
-    Command::new(node)
-        .arg(agent_path()?)
+    let (program, args) = agent_command()?;
+    Command::new(program)
+        .args(args)
         .arg("--auth-file")
         .arg(auth_file(app)?)
         .stdin(Stdio::piped())
