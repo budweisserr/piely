@@ -5,6 +5,7 @@ mod piely;
 mod shortcuts;
 mod whisper;
 mod window;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 #[cfg(target_os = "macos")]
@@ -20,9 +21,10 @@ use tauri_nspanel::{cocoa::appkit::NSWindowCollectionBehavior, panel_delegate, W
 
 #[derive(Default)]
 pub struct AudioState {
-    stream_task: Arc<Mutex<Option<JoinHandle<()>>>>,
-    vad_config: Arc<Mutex<VadConfig>>,
-    is_capturing: Arc<Mutex<bool>>,
+    stream_task: Mutex<Option<JoinHandle<()>>>,
+    vad_config: Mutex<VadConfig>,
+    /// Set to request the capture loop to stop (cooperative, see speaker::commands)
+    stop_requested: Arc<AtomicBool>,
 }
 
 #[tauri::command]
@@ -33,6 +35,13 @@ fn get_app_version() -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // Second launch: focus the existing overlay instead of duplicating it
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:piely.db", db::migrations())
@@ -82,10 +91,7 @@ pub fn run() {
             speaker::manual_stop_continuous,
             speaker::check_system_audio_access,
             speaker::request_system_audio_access,
-            speaker::get_vad_config,
             speaker::update_vad_config,
-            speaker::get_capture_status,
-            speaker::get_audio_sample_rate,
             speaker::get_input_devices,
             speaker::get_output_devices,
         ])
@@ -119,7 +125,7 @@ pub fn run() {
                 .plugin(
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_handler(move |app, shortcut, event| {
-                            use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
+                            use tauri_plugin_global_shortcut::ShortcutState;
 
                             let action_id = {
                                 let state = app.state::<shortcuts::RegisteredShortcuts>();
@@ -131,14 +137,11 @@ pub fn run() {
                                     }
                                 };
 
-                                registered.iter().find_map(|(action_id, shortcut_str)| {
-                                    if let Ok(s) = shortcut_str.parse::<Shortcut>() {
-                                        if &s == shortcut {
-                                            return Some(action_id.clone());
-                                        }
-                                    }
-                                    None
-                                })
+                                registered
+                                    .iter()
+                                    .find_map(|(action_id, s)| {
+                                        (s == shortcut).then(|| action_id.clone())
+                                    })
                             };
 
                             if let Some(action_id) = action_id {
@@ -149,7 +152,6 @@ pub fn run() {
                                         {
                                             shortcuts::start_move_window(app, direction);
                                         } else {
-                                            eprintln!("Shortcut triggered: {}", action_id);
                                             shortcuts::handle_shortcut_action(app, &action_id);
                                         }
                                     }
@@ -200,9 +202,11 @@ fn init(app_handle: &AppHandle) {
             "window_did_become_key" => {
                 let app_name = handle.package_info().name.to_owned();
 
+                #[cfg(debug_assertions)]
                 println!("[info]: {:?} panel becomes key window!", app_name);
             }
             "window_did_resign_key" => {
+                #[cfg(debug_assertions)]
                 println!("[info]: panel resigned from key window!");
             }
             _ => (),

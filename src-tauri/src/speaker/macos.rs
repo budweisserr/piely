@@ -11,7 +11,6 @@ use ringbuf::{
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
-use tracing::error;
 
 pub fn get_input_devices() -> Result<Vec<AudioDevice>> {
     let mut devices = Vec::new();
@@ -107,8 +106,8 @@ fn find_output_device_by_uid(uid: &str) -> Option<ca::Device> {
     let all_devices = match ca::System::devices() {
         Ok(d) => d,
         Err(e) => {
-            error!(
-                "[find_output_device_by_uid] Failed to get system devices: {}",
+            eprintln!(
+                "[audio][macos] Failed to get system devices: {}",
                 e
             );
             return None;
@@ -127,8 +126,8 @@ fn find_output_device_by_uid(uid: &str) -> Option<ca::Device> {
         }
     }
 
-    error!(
-        "[find_output_device_by_uid] No matching device found for UID: {}",
+    eprintln!(
+        "[audio][macos] No matching device found for UID: {}",
         uid
     );
     None

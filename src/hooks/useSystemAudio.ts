@@ -17,8 +17,9 @@ import {
   CONVERSATION_SAVE_DEBOUNCE_MS,
   generateConversationId,
   generateMessageId,
+  MESSAGE_ID_OFFSET,
 } from "@/lib";
-import { Message } from "@/types/completion";
+import { Message, ChatConversation } from "@/types";
 
 // VAD Configuration interface matching Rust
 export interface VadConfig {
@@ -33,35 +34,20 @@ export interface VadConfig {
   max_recording_duration_secs: number;
 }
 
-// OPTIMIZED VAD defaults - matches backend exactly for perfect performance
-const DEFAULT_VAD_CONFIG: VadConfig = {
+// OPTIMIZED VAD defaults - matches backend exactly for perfect performance.
+// Chunk counts are expressed at the 48 kHz reference rate; the backend rescales
+// them to the actual device sample rate.
+export const DEFAULT_VAD_CONFIG: VadConfig = {
   enabled: true,
   hop_size: 1024,
   sensitivity_rms: 0.012, // Much less sensitive - only real speech
   peak_threshold: 0.035, // Higher threshold - filters clicks/noise
-  silence_chunks: 45, // ~1.0s of required silence
-  min_speech_chunks: 7, // ~0.16s - captures short answers
+  silence_chunks: 120, // ~2.5s of required silence (at 48kHz) - tolerates pauses
+  min_speech_chunks: 4, // ~85ms - keeps short answers like "yes"
   pre_speech_chunks: 12, // ~0.27s - enough to catch word start
   noise_gate_threshold: 0.003, // Stronger noise filtering
   max_recording_duration_secs: 180, // 3 minutes default
 };
-
-// Chat message interface (reusing from useCompletion)
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  timestamp: number;
-}
-
-// Conversation interface (reusing from useCompletion)
-export interface ChatConversation {
-  id: string;
-  title: string;
-  messages: ChatMessage[];
-  createdAt: number;
-  updatedAt: number;
-}
 
 export type useSystemAudioType = ReturnType<typeof useSystemAudio>;
 
@@ -251,25 +237,17 @@ export function useSystemAudio() {
 
             setIsProcessing(true);
 
-            // Add timeout wrapper for STT request (30 seconds)
-            const sttPromise = fetchSTT({
-              provider: providerConfig,
-              selectedProvider: selectedSttProvider,
-              audio: audioBlob,
-            });
-
-            const timeoutPromise = new Promise<string>((_, reject) => {
-              setTimeout(
-                () => reject(new Error("Speech transcription timed out (30s)")),
-                30000
-              );
-            });
+            // Abort the STT request if it takes too long (30 seconds)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
 
             try {
-              const transcription = await Promise.race([
-                sttPromise,
-                timeoutPromise,
-              ]);
+              const transcription = await fetchSTT({
+                provider: providerConfig,
+                selectedProvider: selectedSttProvider,
+                audio: audioBlob,
+                signal: controller.signal,
+              });
 
               if (transcription.trim()) {
                 setLastTranscription(transcription);
@@ -295,6 +273,8 @@ export function useSystemAudio() {
               console.error("STT Error:", sttError);
               setError(sttError.message || "Failed to transcribe audio");
               setIsPopoverOpen(true);
+            } finally {
+              clearTimeout(timeoutId);
             }
           } catch (err) {
             setError("Failed to process speech");
@@ -507,7 +487,6 @@ export function useSystemAudio() {
             systemPrompt: prompt,
             history: previousMessages,
             userMessage: transcription,
-            imagesBase64: [],
           })) {
             fullResponse += chunk;
             setLastAIResponse((prev) => prev + chunk);
@@ -528,10 +507,10 @@ export function useSystemAudio() {
                 timestamp,
               },
               {
-                id: generateMessageId("assistant", timestamp + 1),
+                id: generateMessageId("assistant", timestamp + MESSAGE_ID_OFFSET),
                 role: "assistant" as const,
                 content: fullResponse,
-                timestamp: timestamp + 1,
+                timestamp: timestamp + MESSAGE_ID_OFFSET,
               },
               ...prev.messages,
             ],

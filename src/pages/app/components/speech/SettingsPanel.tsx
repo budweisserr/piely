@@ -20,7 +20,7 @@ import {
   RotateCcwIcon,
   ChevronUpIcon,
 } from "lucide-react";
-import { VadConfig } from "@/hooks/useSystemAudio";
+import { DEFAULT_VAD_CONFIG, VadConfig } from "@/hooks/useSystemAudio";
 import {
   PROMPT_TEMPLATES,
   getPromptTemplateById,
@@ -108,18 +108,10 @@ export const SettingsPanel = ({
   };
 
   const handleResetDefaults = () => {
-    const defaultConfig: VadConfig = {
+    onUpdateVadConfig({
+      ...DEFAULT_VAD_CONFIG,
       enabled: vadConfig.enabled, // Keep current mode
-      hop_size: 1024,
-      sensitivity_rms: 0.012,
-      peak_threshold: 0.035,
-      silence_chunks: 45,
-      min_speech_chunks: 7,
-      pre_speech_chunks: 12,
-      noise_gate_threshold: 0.003,
-      max_recording_duration_secs: 180,
-    };
-    onUpdateVadConfig(defaultConfig);
+    });
   };
 
   return (

@@ -2,11 +2,18 @@ import { UseSettingsReturn } from "@/types";
 import { Card, Button, Header } from "@/components";
 import { EditIcon, TrashIcon } from "lucide-react";
 import { CreateEditProvider } from "./CreateEditProvider";
-import { useCustomAiProviders } from "@/hooks";
+import { ProviderKind, useCustomProviders } from "@/hooks";
 import curl2Json from "@bany/curl-to-json";
 
-export const CustomProviders = ({ allAiProviders }: UseSettingsReturn) => {
-  const customProviderHook = useCustomAiProviders();
+export const CustomProviders = ({
+  kind,
+  allAiProviders,
+  allSttProviders,
+}: UseSettingsReturn & { kind: ProviderKind }) => {
+  const isAi = kind === "ai";
+  const allProviders = isAi ? allAiProviders : allSttProviders;
+  const label = isAi ? "AI" : "STT";
+  const customProviderHook = useCustomProviders(kind);
   const {
     handleEdit,
     handleDelete,
@@ -18,15 +25,15 @@ export const CustomProviders = ({ allAiProviders }: UseSettingsReturn) => {
   return (
     <div className="space-y-2">
       <Header
-        title="Custom Providers"
-        description="Create and manage custom AI providers. Configure endpoints, authentication, and response formats."
+        title={`Custom ${label} Providers`}
+        description={`Create and manage custom ${label} providers. Configure endpoints, authentication, and response formats.`}
       />
 
       <div className="space-y-2">
         {/* Existing Custom Providers */}
-        {allAiProviders.filter((provider) => provider?.isCustom).length > 0 && (
+        {allProviders.filter((provider) => provider?.isCustom).length > 0 && (
           <div className="space-y-2">
-            {allAiProviders
+            {allProviders
               .filter((provider) => provider?.isCustom)
               .map((provider) => {
                 const json = curl2Json(provider?.curl);
@@ -86,18 +93,18 @@ export const CustomProviders = ({ allAiProviders }: UseSettingsReturn) => {
           </div>
         )}
       </div>
-      <CreateEditProvider customProviderHook={customProviderHook} />
+      <CreateEditProvider kind={kind} customProviderHook={customProviderHook} />
 
       {/* Delete Confirmation Dialog */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-background border rounded-lg p-6 max-w-md mx-4">
             <h3 className="text-lg font-semibold mb-2">
-              Delete Custom Provider
+              Delete Custom {label} Provider
             </h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Are you sure you want to delete this custom provider? This action
-              cannot be undone.
+              Are you sure you want to delete this custom {label} provider?
+              This action cannot be undone.
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={cancelDelete}>

@@ -31,8 +31,7 @@ export const formatTime = (ts: number): string =>
 
 export const floatArrayToWav = (
   audioData: Float32Array,
-  sampleRate: number = 16000,
-  format: "wav" | "mp3" | "ogg" = "wav"
+  sampleRate: number = 16000
 ): Blob => {
   const buffer = new ArrayBuffer(44 + audioData.length * 2);
   const view = new DataView(buffer);
@@ -45,10 +44,8 @@ export const floatArrayToWav = (
   };
 
   writeString(0, "RIFF");
-  const dataSize =
-    format === "wav" ? 36 + audioData.length * 2 : 44 + audioData.length * 2;
-  view.setUint32(4, dataSize, true);
-  writeString(8, format === "wav" ? "WAVE" : "FORM");
+  view.setUint32(4, 36 + audioData.length * 2, true);
+  writeString(8, "WAVE");
   writeString(12, "fmt ");
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
@@ -68,5 +65,5 @@ export const floatArrayToWav = (
     offset += 2;
   }
 
-  return new Blob([buffer], { type: `audio/${format}` });
+  return new Blob([buffer], { type: "audio/wav" });
 };

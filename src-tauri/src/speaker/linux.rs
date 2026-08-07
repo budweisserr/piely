@@ -8,8 +8,6 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
 use std::thread;
-use tracing::error;
-use tracing::warn;
 use libpulse_binding as pulse;
 use libpulse_simple_binding as psimple;
 
@@ -326,7 +324,7 @@ impl SpeakerStream {
         };
 
         if !spec.is_valid() {
-            error!("[capture_audio_loop] Invalid audio specification");
+            eprintln!("[audio][linux] Invalid audio specification");
             return Err(anyhow!("Invalid audio specification"));
         }
 
@@ -346,8 +344,8 @@ impl SpeakerStream {
                 None,                    // Buffer attributes (use default)
             )
             .map_err(|e| {
-                error!(
-                    "[capture_audio_loop] Failed to create PulseAudio connection: {}",
+                eprintln!(
+                    "[audio][linux] Failed to create PulseAudio connection: {}",
                     e
                 );
                 anyhow!("Failed to create PulseAudio simple connection: {}", e)
@@ -397,7 +395,7 @@ impl SpeakerStream {
                                 };
 
                                 if dropped > 0 {
-                                    warn!("[capture_audio_loop] Linux buffer overflow - dropped {} samples", dropped);
+                                    eprintln!("[audio][linux] Buffer overflow - dropped {} samples", dropped);
                                 }
 
                                 // Wake up consumer
@@ -414,14 +412,14 @@ impl SpeakerStream {
                             }
                         }
                         Err(e) => {
-                            error!("[capture_audio_loop] PulseAudio read error: {}", e);
+                            eprintln!("[audio][linux] PulseAudio read error: {}", e);
                             thread::sleep(std::time::Duration::from_millis(100));
                         }
                     }
                 }
             }
             Err(e) => {
-                error!("[capture_audio_loop] PulseAudio init failed: {}", e);
+                eprintln!("[audio][linux] PulseAudio init failed: {}", e);
                 let _ = init_tx.send(Err(e));
             }
         }

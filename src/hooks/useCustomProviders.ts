@@ -1,16 +1,34 @@
 import { useState } from "react";
 import { TYPE_PROVIDER } from "@/types";
-import { AI_PROVIDERS } from "@/config";
+import { AI_PROVIDERS, SPEECH_TO_TEXT_PROVIDERS } from "@/config";
 import { useApp } from "@/contexts";
 import {
   getCustomAiProviders,
   addCustomAiProvider,
   updateCustomAiProvider,
   removeCustomAiProvider,
+  getCustomSttProviders,
+  addCustomSttProvider,
+  updateCustomSttProvider,
+  removeCustomSttProvider,
   validateCurl,
 } from "@/lib";
 
-export function useCustomAiProviders() {
+export type ProviderKind = "ai" | "stt";
+
+/**
+ * Shared CRUD state for custom providers (AI and STT are the same flow;
+ * they differ only in the storage key, built-in list, validation and
+ * streaming support).
+ */
+export function useCustomProviders(kind: ProviderKind) {
+  const isStt = kind === "stt";
+  const builtinProviders = isStt ? SPEECH_TO_TEXT_PROVIDERS : AI_PROVIDERS;
+  const getCustom = isStt ? getCustomSttProviders : getCustomAiProviders;
+  const addCustom = isStt ? addCustomSttProvider : addCustomAiProvider;
+  const updateCustom = isStt ? updateCustomSttProvider : updateCustomAiProvider;
+  const removeCustom = isStt ? removeCustomSttProvider : removeCustomAiProvider;
+
   const { loadData } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
@@ -26,7 +44,7 @@ export function useCustomAiProviders() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const handleEdit = (providerId: string) => {
-    const customProviders = getCustomAiProviders();
+    const customProviders = getCustom();
     const provider = customProviders.find((p) => p.id === providerId);
     if (!provider) return;
 
@@ -39,7 +57,7 @@ export function useCustomAiProviders() {
   };
 
   const handleAutoFill = (providerId: string) => {
-    const provider = AI_PROVIDERS.find((p) => p.id === providerId);
+    const provider = builtinProviders.find((p) => p.id === providerId);
     if (!provider) return;
 
     setFormData({
@@ -58,7 +76,7 @@ export function useCustomAiProviders() {
     if (!deleteConfirm) return;
 
     try {
-      const success = removeCustomAiProvider(deleteConfirm);
+      const success = removeCustom(deleteConfirm);
       if (success) {
         setDeleteConfirm(null);
         loadData(); // Refresh data
@@ -78,8 +96,10 @@ export function useCustomAiProviders() {
 
     if (!formData.curl.trim()) {
       newErrors.curl = "Curl command is required";
+    } else if (isStt && !formData.curl.includes("{{AUDIO}}")) {
+      newErrors.curl = "cURL command must contain {{AUDIO}}.";
     } else {
-      const validation = validateCurl(formData.curl, ["TEXT"]);
+      const validation = validateCurl(formData.curl, isStt ? [] : ["TEXT"]);
       if (!validation.isValid) {
         newErrors.curl = validation.message || "";
       }
@@ -95,45 +115,39 @@ export function useCustomAiProviders() {
       return;
     }
 
+    const emptyForm: TYPE_PROVIDER = {
+      id: "",
+      streaming: false,
+      responseContentPath: "",
+      isCustom: true,
+      curl: "",
+    };
+
     try {
       if (editingProvider) {
         // Update existing provider
-        const success = updateCustomAiProvider(editingProvider, {
+        const success = updateCustom(editingProvider, {
           curl: formData.curl,
-          streaming: formData.streaming,
+          streaming: isStt ? false : formData.streaming,
           responseContentPath: formData.responseContentPath,
         });
 
         if (success) {
           setEditingProvider(null);
           setShowForm(false);
-          setFormData({
-            id: "",
-            streaming: false,
-            responseContentPath: "",
-            isCustom: true,
-            curl: "",
-          });
+          setFormData(emptyForm);
           loadData(); // Refresh data
         }
       } else {
         // Create new provider
-        const newProvider = {
+        const saved = addCustom({
           curl: formData.curl,
-          streaming: formData.streaming,
+          streaming: isStt ? false : formData.streaming,
           responseContentPath: formData.responseContentPath,
-        };
-
-        const saved = addCustomAiProvider(newProvider);
+        });
         if (saved) {
           setShowForm(false);
-          setFormData({
-            id: "",
-            streaming: false,
-            responseContentPath: "",
-            isCustom: true,
-            curl: "",
-          });
+          setFormData(emptyForm);
           loadData(); // Refresh data
         }
       }

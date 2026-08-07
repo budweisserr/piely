@@ -62,25 +62,34 @@ pub async fn local_transcribe(
         ));
     }
 
-    let result = Command::new(whisper_cli_path())
-        // -t: use all cores (whisper.cpp defaults to 4); -fa: flash attention
-        // (Metal/CUDA speedup, safe fallback elsewhere)
-        .args([
-            "-m",
-            model.to_str().ok_or("Invalid model path")?,
-            "-f",
-            tmp_wav.to_str().ok_or("Invalid temp path")?,
-            "-oj",
-            "-nt",
-            "-np",
-            "-t",
-            &std::thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(4)
-                .to_string(),
-            "-fa",
-        ])
-        .output();
+    let model_arg = model.to_string_lossy().into_owned();
+    let wav_arg = tmp_wav.to_string_lossy().into_owned();
+    let threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .to_string();
+
+    // whisper-cli is a blocking subprocess; run it off the async runtime.
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        Command::new(whisper_cli_path())
+            // -t: use all cores (whisper.cpp defaults to 4); -fa: flash attention
+            // (Metal/CUDA speedup, safe fallback elsewhere)
+            .args([
+                "-m",
+                model_arg.as_str(),
+                "-f",
+                wav_arg.as_str(),
+                "-oj",
+                "-nt",
+                "-np",
+                "-t",
+                threads.as_str(),
+                "-fa",
+            ])
+            .output()
+    })
+    .await
+    .map_err(|e| format!("Whisper task panicked: {}", e))?;
 
     let transcript: Result<String, String> = match result {
         Ok(output) if output.status.success() => {

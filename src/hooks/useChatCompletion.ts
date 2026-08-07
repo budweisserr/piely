@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useApp } from "@/contexts";
 import { MAX_FILES } from "@/config";
 import {
@@ -9,41 +9,17 @@ import {
   shouldUsePiely,
   MESSAGE_ID_OFFSET,
   generateMessageId,
-  generateRequestId,
   getResponseSettings,
 } from "@/lib";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { AttachedFile, ChatConversation, ChatMessage, ScreenshotConfig } from "@/types";
+import { useAttachments } from "./useAttachments";
+import { useScreenshotCapture } from "./useScreenshotCapture";
+import { useStreamRequest } from "./useStreamRequest";
 
-// Types for completion
-interface AttachedFile {
-  id: string;
-  name: string;
-  type: string;
-  base64: string;
-  size: number;
-}
-
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  timestamp: number;
-}
-
-interface ChatConversation {
-  id: string;
-  title: string;
-  messages: ChatMessage[];
-  createdAt: number;
-  updatedAt: number;
-}
-
-interface ChatCompletionState {
+interface ChatCompletionUiState {
   input: string;
   isLoading: boolean;
   error: string | null;
-  attachedFiles: AttachedFile[];
 }
 
 export const useChatCompletion = (
@@ -62,75 +38,47 @@ export const useChatCompletion = (
     selectedAudioDevices,
   } = useApp();
 
-  const [state, setState] = useState<ChatCompletionState>({
+  const [state, setState] = useState<ChatCompletionUiState>({
     input: "",
     isLoading: false,
     error: null,
-    attachedFiles: [],
   });
 
   const [micOpen, setMicOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isFilesPopoverOpen, setIsFilesPopoverOpen] = useState(false);
-  const [isScreenshotLoading, setIsScreenshotLoading] = useState(false);
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const currentRequestIdRef = useRef<string | null>(null);
-  const isProcessingScreenshotRef = useRef(false);
-  const screenshotConfigRef = useRef(screenshotConfiguration);
-  const hasCheckedPermissionRef = useRef(false);
-  const screenshotInitiatedByThisContext = useRef(false);
 
-  useEffect(() => {
-    screenshotConfigRef.current = screenshotConfiguration;
-  }, [screenshotConfiguration]);
-
-  const scrollToBottom = () => {
-    const responseSettings = getResponseSettings();
-    if (responseSettings.autoScroll) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  };
+  const { beginRequest, isCurrent, cancel } = useStreamRequest();
+  const {
+    attachedFiles,
+    setAttachedFiles,
+    addFile,
+    removeFile,
+    clearFiles,
+    handleFileSelect,
+    handlePaste,
+  } = useAttachments();
 
   const setInput = useCallback((value: string) => {
     setState((prev) => ({ ...prev, input: value }));
   }, []);
 
-  const addFile = useCallback(async (file: File) => {
-    try {
-      const base64 = await fileToBase64(file);
-      const attachedFile: AttachedFile = {
-        id: Date.now().toString(),
-        name: file.name,
-        type: file.type,
-        base64,
-        size: file.size,
-      };
+  const reportError = useCallback((message: string) => {
+    setState((prev) => ({ ...prev, error: message }));
+  }, []);
 
-      setState((prev) => ({
-        ...prev,
-        attachedFiles: [...prev.attachedFiles, attachedFile],
-      }));
-    } catch (error) {
-      console.error("Failed to process file:", error);
+  const scrollToBottom = useCallback(() => {
+    const responseSettings = getResponseSettings();
+    if (responseSettings.autoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, []);
 
-  const removeFile = useCallback((fileId: string) => {
-    setState((prev) => ({
-      ...prev,
-      attachedFiles: prev.attachedFiles.filter((f) => f.id !== fileId),
-    }));
-  }, []);
-
-  const clearFiles = useCallback(() => {
-    setState((prev) => ({ ...prev, attachedFiles: [] }));
-  }, []);
-
   const submit = useCallback(
-    async (speechText?: string) => {
+    async (speechText?: string, screenshotImage?: AttachedFile) => {
       const input = speechText || state.input;
 
       if (!input.trim()) {
@@ -144,17 +92,8 @@ export const useChatCompletion = (
         }));
       }
 
-      // Generate unique request ID
-      const requestId = generateRequestId();
-      currentRequestIdRef.current = requestId;
-
-      // Cancel any existing request
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-
-      abortControllerRef.current = new AbortController();
-      const signal = abortControllerRef.current.signal;
+      // Start a new request, cancelling any in-flight one
+      const { requestId, signal } = beginRequest();
 
       try {
         // Prepare message history for the AI
@@ -163,17 +102,13 @@ export const useChatCompletion = (
           content: msg.content,
         }));
 
-        // Handle image attachments
-        const imagesBase64: string[] = [];
-        const images: { data: string; mimeType: string }[] = [];
-        if (state.attachedFiles.length > 0) {
-          state.attachedFiles.forEach((file) => {
-            if (file.type.startsWith("image/")) {
-              imagesBase64.push(file.base64);
-              images.push({ data: file.base64, mimeType: file.type });
-            }
-          });
-        }
+        // Handle image attachments (a screenshot counts as an attached image)
+        const files = screenshotImage
+          ? [...attachedFiles, screenshotImage]
+          : attachedFiles;
+        const images = files
+          .filter((file) => file.type.startsWith("image/"))
+          .map((file) => ({ data: file.base64, mimeType: file.type }));
 
         const usePiely = shouldUsePiely();
         // Check if AI provider is configured
@@ -217,8 +152,8 @@ export const useChatCompletion = (
           input: "",
           isLoading: true,
           error: null,
-          attachedFiles: [],
         }));
+        clearFiles();
 
         // Scroll to bottom after adding user message
         setTimeout(scrollToBottom, 100);
@@ -233,18 +168,12 @@ export const useChatCompletion = (
             systemPrompt: systemPrompt || undefined,
             history: messageHistory,
             userMessage: input,
-            imagesBase64,
             images,
             signal,
           })) {
             // Only update if this is still the current request
-            if (currentRequestIdRef.current !== requestId) {
-              return; // Request was superseded, stop processing
-            }
-
-            // Check if request was aborted
-            if (signal.aborted) {
-              return; // Request was cancelled, stop processing
+            if (!isCurrent(requestId, signal)) {
+              return; // Request was superseded or cancelled, stop processing
             }
 
             fullResponse += chunk;
@@ -257,45 +186,28 @@ export const useChatCompletion = (
               timestamp: timestamp + MESSAGE_ID_OFFSET,
             };
 
-            const updatedWithResponse = {
+            setMessages({
               ...updatedMessages,
               messages: [...updatedMessages.messages, assistantMsg],
-            };
-
-            // Check if assistant message already exists
-            const lastMessage =
-              updatedWithResponse.messages[
-                updatedWithResponse.messages.length - 1
-              ];
-            if (lastMessage.role === "assistant") {
-              // Update existing assistant message
-              updatedWithResponse.messages[
-                updatedWithResponse.messages.length - 1
-              ] = assistantMsg;
-            } else {
-              // Add new assistant message
-              updatedWithResponse.messages.push(assistantMsg);
-            }
-
-            setMessages(updatedWithResponse);
+            });
 
             // Auto-scroll during streaming
             scrollToBottom();
           }
-        } catch (e: any) {
+        } catch (e) {
           // Only show error if this is still the current request and not aborted
-          if (currentRequestIdRef.current === requestId && !signal.aborted) {
+          if (isCurrent(requestId, signal)) {
             setState((prev) => ({
               ...prev,
               isLoading: false,
-              error: e.message || "An error occurred",
+              error: e instanceof Error ? e.message : "An error occurred",
             }));
           }
           return;
         }
 
         // Only proceed if this is still the current request
-        if (currentRequestIdRef.current !== requestId || signal.aborted) {
+        if (!isCurrent(requestId, signal)) {
           return;
         }
 
@@ -367,7 +279,7 @@ export const useChatCompletion = (
         }
       } catch (error) {
         // Only show error if not aborted
-        if (!signal?.aborted && currentRequestIdRef.current === requestId) {
+        if (isCurrent(requestId, signal)) {
           setState((prev) => ({
             ...prev,
             error: error instanceof Error ? error.message : "An error occurred",
@@ -378,57 +290,28 @@ export const useChatCompletion = (
     },
     [
       state.input,
-      state.attachedFiles,
+      attachedFiles,
       selectedAIProvider,
       allAiProviders,
       systemPrompt,
       messages,
       conversationId,
       setMessages,
+      beginRequest,
+      isCurrent,
+      scrollToBottom,
+      clearFiles,
     ]
   );
 
-  const cancel = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-    currentRequestIdRef.current = null;
+  const cancelRequest = useCallback(() => {
+    cancel();
     setState((prev) => ({ ...prev, isLoading: false }));
-  }, []);
-
-  // Helper function to convert file to base64
-  const fileToBase64 = useCallback(async (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => {
-        const base64 = (reader.result as string)?.split(",")[1] || "";
-        resolve(base64);
-      };
-      reader.onerror = reject;
-    });
-  }, []);
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-
-    files.forEach((file) => {
-      if (
-        file.type.startsWith("image/") &&
-        state.attachedFiles.length < MAX_FILES
-      ) {
-        addFile(file);
-      }
-    });
-
-    // Reset input so same file can be selected again
-    e.target.value = "";
-  };
+  }, [cancel]);
 
   const handleScreenshotSubmit = useCallback(
     async (base64: string, prompt?: string) => {
-      if (state.attachedFiles.length >= MAX_FILES) {
+      if (attachedFiles.length >= MAX_FILES) {
         setState((prev) => ({
           ...prev,
           error: `You can only upload ${MAX_FILES} files`,
@@ -436,60 +319,40 @@ export const useChatCompletion = (
         return;
       }
 
-      try {
-        if (prompt) {
-          // Auto mode: Submit directly to AI with screenshot
-          const attachedFile: AttachedFile = {
-            id: Date.now().toString(),
-            name: `screenshot_${Date.now()}.png`,
-            type: "image/png",
-            base64: base64,
-            size: base64.length,
-          };
+      const attachedFile: AttachedFile = {
+        id: crypto.randomUUID(),
+        name: `screenshot_${Date.now()}.png`,
+        type: "image/png",
+        base64: base64,
+        size: base64.length,
+      };
 
-          // Store files temporarily and submit
-          setState((prev) => ({
-            ...prev,
-            attachedFiles: [...prev.attachedFiles, attachedFile],
-            input: prompt,
-          }));
-
-          // Submit with the prompt and screenshot
-          setTimeout(() => submit(prompt), 100);
-        } else {
-          // Manual mode: Add to attached files
-          const attachedFile: AttachedFile = {
-            id: Date.now().toString(),
-            name: `screenshot_${Date.now()}.png`,
-            type: "image/png",
-            base64: base64,
-            size: base64.length,
-          };
-
-          setState((prev) => ({
-            ...prev,
-            attachedFiles: [...prev.attachedFiles, attachedFile],
-          }));
-        }
-      } catch (error) {
-        console.error("Failed to process screenshot:", error);
-        setState((prev) => ({
-          ...prev,
-          error:
-            error instanceof Error
-              ? error.message
-              : "An error occurred processing screenshot",
-          isLoading: false,
-        }));
+      if (prompt) {
+        // Auto mode: Submit directly to AI with screenshot (submit clears
+        // the input on success)
+        await submit(prompt, attachedFile);
+      } else {
+        // Manual mode: Add to attached files
+        setAttachedFiles((prev) => [...prev, attachedFile]);
       }
     },
-    [state.attachedFiles.length, submit]
+    [attachedFiles.length, submit, setAttachedFiles]
   );
 
-  const onRemoveAllFiles = () => {
-    clearFiles();
-    setIsFilesPopoverOpen(false);
-  };
+  const handleScreenshotCaptured = useCallback(
+    async (base64: string, config: ScreenshotConfig) => {
+      await handleScreenshotSubmit(
+        base64,
+        config.mode === "auto" ? config.autoPrompt : undefined
+      );
+    },
+    [handleScreenshotSubmit]
+  );
+
+  const { captureScreenshot, isScreenshotLoading } = useScreenshotCapture(
+    handleScreenshotCaptured,
+    reportError
+  );
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -500,197 +363,17 @@ export const useChatCompletion = (
     }
   };
 
-  const handlePaste = useCallback(
-    async (e: React.ClipboardEvent) => {
-      // Check if clipboard contains images
-      const items = e.clipboardData?.items;
-      if (!items) return;
-
-      const hasImages = Array.from(items).some((item) =>
-        item.type.startsWith("image/")
-      );
-
-      // If we have images, prevent default text pasting and process images
-      if (hasImages) {
-        e.preventDefault();
-
-        const processedFiles: File[] = [];
-
-        Array.from(items).forEach((item) => {
-          if (
-            item.type.startsWith("image/") &&
-            state.attachedFiles.length + processedFiles.length < MAX_FILES
-          ) {
-            const file = item.getAsFile();
-            if (file) {
-              processedFiles.push(file);
-            }
-          }
-        });
-
-        // Process all files
-        await Promise.all(processedFiles.map((file) => addFile(file)));
-      }
-    },
-    [state.attachedFiles.length, addFile]
-  );
-
-  const captureScreenshot = useCallback(async () => {
-    if (!handleScreenshotSubmit) return;
-
-    const config = screenshotConfigRef.current;
-
-    // Mark that this context initiated the screenshot
-    screenshotInitiatedByThisContext.current = true;
-
-    setIsScreenshotLoading(true);
-
-    try {
-      // Check screen recording permission on macOS
-      const platform = navigator.platform.toLowerCase();
-      if (platform.includes("mac") && !hasCheckedPermissionRef.current) {
-        const {
-          checkScreenRecordingPermission,
-          requestScreenRecordingPermission,
-        } = await import("tauri-plugin-macos-permissions-api");
-
-        const hasPermission = await checkScreenRecordingPermission();
-
-        if (!hasPermission) {
-          // Request permission
-          await requestScreenRecordingPermission();
-
-          // Wait a moment and check again
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-
-          const hasPermissionNow = await checkScreenRecordingPermission();
-
-          if (!hasPermissionNow) {
-            setState((prev) => ({
-              ...prev,
-              error:
-                "Screen Recording permission required. Please enable it by going to System Settings > Privacy & Security > Screen & System Audio Recording. If you don't see Piely in the list, click the '+' button to add it. If it's already listed, make sure it's enabled. Then restart the app.",
-            }));
-            setIsScreenshotLoading(false);
-            screenshotInitiatedByThisContext.current = false;
-            return;
-          }
-        }
-        hasCheckedPermissionRef.current = true;
-      }
-
-      if (config.enabled) {
-        const base64 = await invoke("capture_to_base64");
-
-        if (config.mode === "auto") {
-          // Auto mode: Submit directly to AI with the configured prompt
-          await handleScreenshotSubmit(base64 as string, config.autoPrompt);
-        } else if (config.mode === "manual") {
-          // Manual mode: Add to attached files without prompt
-          await handleScreenshotSubmit(base64 as string);
-        }
-        // Reset flag after processing
-        screenshotInitiatedByThisContext.current = false;
-      } else {
-        // Selection Mode: Open overlay to select an area
-        isProcessingScreenshotRef.current = false;
-        await invoke("start_screen_capture");
-      }
-    } catch (error) {
-      setState((prev) => ({
-        ...prev,
-        error: "Failed to capture screenshot. Please try again.",
-      }));
-      isProcessingScreenshotRef.current = false;
-      screenshotInitiatedByThisContext.current = false;
-    } finally {
-      if (config.enabled) {
-        setIsScreenshotLoading(false);
-      }
-    }
-  }, [handleScreenshotSubmit]);
-
-  useEffect(() => {
-    let unlisten: any;
-
-    const setupListener = async () => {
-      unlisten = await listen("captured-selection", async (event: any) => {
-        // Only process if this context initiated the screenshot
-        if (!screenshotInitiatedByThisContext.current) {
-          return;
-        }
-
-        if (isProcessingScreenshotRef.current) {
-          return;
-        }
-
-        isProcessingScreenshotRef.current = true;
-        const base64 = event.payload;
-        const config = screenshotConfigRef.current;
-
-        try {
-          if (config.mode === "auto") {
-            // Auto mode: Submit directly to AI with the configured prompt
-            await handleScreenshotSubmit(base64 as string, config.autoPrompt);
-          } else if (config.mode === "manual") {
-            // Manual mode: Add to attached files without prompt
-            await handleScreenshotSubmit(base64 as string);
-          }
-        } catch (error) {
-          console.error("Error processing selection:", error);
-        } finally {
-          setIsScreenshotLoading(false);
-          screenshotInitiatedByThisContext.current = false;
-          setTimeout(() => {
-            isProcessingScreenshotRef.current = false;
-          }, 100);
-        }
-      });
-    };
-
-    setupListener();
-
-    return () => {
-      if (unlisten) {
-        unlisten();
-      }
-    };
-  }, [handleScreenshotSubmit]);
-
-  useEffect(() => {
-    const unlisten = listen("capture-closed", () => {
-      setIsScreenshotLoading(false);
-      isProcessingScreenshotRef.current = false;
-      screenshotInitiatedByThisContext.current = false;
-    });
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, []);
-
-  // Cleanup abort controller on unmount
-  useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
-      }
-      currentRequestIdRef.current = null;
-    };
-  }, []);
-
   return {
     input: state.input,
     setInput,
     isLoading: state.isLoading,
     error: state.error,
-    attachedFiles: state.attachedFiles,
+    attachedFiles,
     addFile,
     removeFile,
     clearFiles,
     submit,
-    cancel,
+    cancel: cancelRequest,
     setState,
     isRecording,
     setIsRecording,
@@ -704,7 +387,10 @@ export const useChatCompletion = (
     handlePaste,
     isFilesPopoverOpen,
     setIsFilesPopoverOpen,
-    onRemoveAllFiles,
+    onRemoveAllFiles: () => {
+      clearFiles();
+      setIsFilesPopoverOpen(false);
+    },
     inputRef,
     captureScreenshot,
     isScreenshotLoading,

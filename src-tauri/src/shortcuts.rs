@@ -17,9 +17,9 @@ pub struct WindowVisibility {
     pub is_hidden: Mutex<bool>,
 }
 
-// State for registered shortcuts
+// State for registered shortcuts: action_id -> parsed shortcut
 pub struct RegisteredShortcuts {
-    pub shortcuts: Mutex<HashMap<String, String>>, // action_id -> shortcut_key
+    pub shortcuts: Mutex<HashMap<String, Shortcut>>,
 }
 
 impl Default for RegisteredShortcuts {
@@ -284,7 +284,10 @@ pub fn get_registered_shortcuts<R: Runtime>(
             poisoned.into_inner()
         }
     };
-    Ok(registered.clone())
+    Ok(registered
+        .iter()
+        .map(|(action_id, shortcut)| (action_id.clone(), shortcut.to_string()))
+        .collect())
 }
 
 /// Tauri command to update shortcuts dynamically
@@ -359,7 +362,7 @@ pub fn update_shortcuts<R: Runtime>(
         match app.global_shortcut().register(shortcut) {
             Ok(_) => {
                 eprintln!("Registered shortcut: {} -> {}", action_id, shortcut_str);
-                successfully_registered.insert(action_id, shortcut_str);
+                successfully_registered.insert(action_id, shortcut);
             }
             Err(e) => {
                 eprintln!("Failed to register {} shortcut: {}", action_id, e);
@@ -415,15 +418,13 @@ fn unregister_all_shortcuts<R: Runtime>(app: &AppHandle<R>) -> Result<(), String
         }
     };
 
-    for (action_id, shortcut_str) in registered.iter() {
-        if let Ok(shortcut) = shortcut_str.parse::<Shortcut>() {
-            match app.global_shortcut().unregister(shortcut) {
-                Ok(_) => {
-                    eprintln!("Unregistered shortcut: {} -> {}", action_id, shortcut_str);
-                }
-                Err(e) => {
-                    eprintln!("Failed to unregister shortcut {}: {}", shortcut_str, e);
-                }
+    for (action_id, shortcut) in registered.iter() {
+        match app.global_shortcut().unregister(shortcut.clone()) {
+            Ok(_) => {
+                eprintln!("Unregistered shortcut: {} -> {}", action_id, shortcut);
+            }
+            Err(e) => {
+                eprintln!("Failed to unregister shortcut {}: {}", shortcut, e);
             }
         }
     }

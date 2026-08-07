@@ -39,7 +39,7 @@ export const AudioRecorder = ({
       setIsTranscribing(true);
       setError(null);
       try {
-        const audioBlob = floatArrayToWav(audio, 16000, "wav");
+        const audioBlob = floatArrayToWav(audio, 16000);
         const provider = allSttProviders.find(
           (p) => p.id === selectedSttProvider.provider
         );

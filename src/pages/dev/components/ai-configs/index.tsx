@@ -1,24 +1,6 @@
-import { Header, PielyProviderLogin } from "@/components";
 import { UseSettingsReturn } from "@/types";
-import { Providers } from "./Providers";
-import { CustomProviders } from "./CustomProvider";
+import { ProviderConfigs } from "../provider-configs";
 
 export const AIProviders = (settings: UseSettingsReturn) => {
-  return (
-    <div id="ai-providers" className="space-y-3">
-      <Header
-        title="AI Providers"
-        description="Select your preferred AI service provider to get started."
-        isMainTitle
-      />
-
-      {/* pi login providers */}
-      <PielyProviderLogin />
-
-      {/* Custom Provider */}
-      <CustomProviders {...settings} />
-      {/* Providers Selection */}
-      <Providers {...settings} />
-    </div>
-  );
+  return <ProviderConfigs kind="ai" {...settings} />;
 };

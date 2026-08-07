@@ -16,6 +16,8 @@ export interface STTParams {
     variables: Record<string, string>;
   };
   audio: File | Blob;
+  /** Optional signal to abort the request (e.g. for timeouts) */
+  signal?: AbortSignal;
 }
 
 /**
@@ -42,7 +44,7 @@ export async function fetchSTT(params: STTParams): Promise<string> {
   let warnings: string[] = [];
 
   try {
-    const { provider, selectedProvider, audio } = params;
+    const { provider, selectedProvider, audio, signal } = params;
 
     if (!provider) throw new Error("Provider not provided");
 
@@ -187,8 +189,12 @@ export async function fetchSTT(params: STTParams): Promise<string> {
         method: curlJson.method || "POST",
         headers: finalHeaders,
         body: curlJson.method === "GET" ? undefined : body,
+        signal,
       });
     } catch (e) {
+      if (signal?.aborted) {
+        throw new Error("Speech transcription timed out (30s)");
+      }
       throw new Error(`Network error: ${e instanceof Error ? e.message : e}`);
     }
 

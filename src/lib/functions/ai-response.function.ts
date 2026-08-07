@@ -180,7 +180,6 @@ export async function* fetchAIResponse(params: {
   systemPrompt?: string;
   history?: Message[];
   userMessage: string;
-  imagesBase64?: string[];
   images?: { data: string; mimeType: string }[];
   signal?: AbortSignal;
 }): AsyncIterable<string> {
@@ -191,8 +190,7 @@ export async function* fetchAIResponse(params: {
       systemPrompt,
       history = [],
       userMessage,
-      imagesBase64 = [],
-      images,
+      images = [],
       signal,
     } = params;
 
@@ -202,6 +200,7 @@ export async function* fetchAIResponse(params: {
     }
 
     const enhancedSystemPrompt = buildEnhancedSystemPrompt(systemPrompt);
+    const imagesBase64 = images.map((image) => image.data);
 
     // Check if we should use pi (login + providers) instead of curl providers
     if (shouldUsePiely()) {
@@ -250,7 +249,7 @@ export async function* fetchAIResponse(params: {
     if (!userMessage) {
       throw new Error("User message is required");
     }
-    if (imagesBase64.length > 0 && !provider.curl.includes("{{IMAGE}}")) {
+    if (images.length > 0 && !provider.curl.includes("{{IMAGE}}")) {
       throw new Error(
         `Provider ${provider?.id ?? "unknown"} does not support image input`
       );

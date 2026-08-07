@@ -32,10 +32,13 @@ const AutoSpeechVADInternal = ({
     userSpeakingThreshold: 0.6,
     startOnLoad: true,
     additionalAudioConstraints: audioConstraints,
+    // Default redemptionFrames=8 (~0.77s) ends the utterance on a breath;
+    // 20 frames (~1.9s at 16kHz) lets mid-thought pauses pass.
+    redemptionFrames: 20,
     onSpeechEnd: async (audio) => {
       try {
         // convert float32array to blob
-        const audioBlob = floatArrayToWav(audio, 16000, "wav");
+        const audioBlob = floatArrayToWav(audio, 16000);
 
         let transcription: string;
 

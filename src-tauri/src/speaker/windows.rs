@@ -7,7 +7,6 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::task::{Poll, Waker};
 use std::thread;
 use std::time::Duration;
-use tracing::error;
 use wasapi::{get_default_device, DeviceCollection, Direction, SampleType, StreamMode, WaveFormat};
 
 pub fn get_input_devices() -> Result<Vec<AudioDevice>> {
@@ -74,8 +73,8 @@ fn find_device_by_id(direction: &Direction, device_id: &str) -> Option<wasapi::D
     let collection = match DeviceCollection::new(direction) {
         Ok(c) => c,
         Err(e) => {
-            error!(
-                "[find_device_by_id] Failed to create device collection: {}",
+            eprintln!(
+                "[audio][windows] Failed to create device collection: {}",
                 e
             );
             return None;
@@ -85,7 +84,7 @@ fn find_device_by_id(direction: &Direction, device_id: &str) -> Option<wasapi::D
     let count = match collection.get_nbr_devices() {
         Ok(c) => c,
         Err(e) => {
-            error!("[find_device_by_id] Failed to get device count: {}", e);
+            eprintln!("[audio][windows] Failed to get device count: {}", e);
             return None;
         }
     };
@@ -103,8 +102,8 @@ fn find_device_by_id(direction: &Direction, device_id: &str) -> Option<wasapi::D
         }
     }
 
-    error!(
-        "[find_device_by_id] No matching device found for ID: {}",
+    eprintln!(
+        "[audio][windows] No matching device found for ID: {}",
         device_id
     );
     None
@@ -139,18 +138,18 @@ impl SpeakerInput {
             if let Err(e) =
                 SpeakerStream::capture_audio_loop(queue_clone, waker_clone, init_tx, device_id)
             {
-                error!("Piely Audio capture loop failed: {}", e);
+                eprintln!("[audio][windows] Audio capture loop failed: {}", e);
             }
         });
 
         let actual_sample_rate = match init_rx.recv_timeout(Duration::from_secs(5)) {
             Ok(Ok(rate)) => rate,
             Ok(Err(e)) => {
-                error!("Piely Audio initialization failed: {}", e);
+                eprintln!("[audio][windows] Audio initialization failed: {}", e);
                 44100
             }
             Err(_) => {
-                error!("Piely Audio initialization timeout");
+                eprintln!("[audio][windows] Audio initialization timeout");
                 44100
             }
         };
@@ -246,13 +245,13 @@ impl SpeakerStream {
                     }
 
                     if h_event.wait_for_event(3000).is_err() {
-                        error!("Piely timeout error, stopping capture");
+                        eprintln!("[audio][windows] Timeout error, stopping capture");
                         break;
                     }
 
                     let mut temp_queue = VecDeque::new();
                     if let Err(e) = render_client.read_from_device_to_deque(&mut temp_queue) {
-                        error!("Piely Failed to read audio data: {}", e);
+                        eprintln!("[audio][windows] Failed to read audio data: {}", e);
                         continue;
                     }
 
@@ -293,7 +292,7 @@ impl SpeakerStream {
                         };
 
                         if dropped > 0 {
-                            error!("Windows buffer overflow - dropped {} samples", dropped);
+                            eprintln!("[audio][windows] Buffer overflow - dropped {} samples", dropped);
                         }
 
                         // Wake up consumer
@@ -330,7 +329,7 @@ impl Drop for SpeakerStream {
 
         if let Some(thread) = self.capture_thread.take() {
             if let Err(e) = thread.join() {
-                error!("Failed to join capture thread: {:?}", e);
+                eprintln!("[audio][windows] Failed to join capture thread: {:?}", e);
             }
         }
     }
