@@ -86,10 +86,12 @@ fn agent_path() -> Result<PathBuf, String> {
 
 /// Resolve the pi sidecar as (program, args-before-auth-file):
 /// 1. PIELY_AGENT_PATH override (compiled binary, or .mjs/.js script run with node)
-/// 2. bundled sidecar next to the app executable (externalBin)
-/// 3. dev-compiled binary (piely-agent/bin)
-/// 4. agent.mjs with node
-fn agent_command() -> Result<(String, Vec<String>), String> {
+/// 2. bundled resource (copied verbatim by tauri, unlike externalBin which gets
+///    rpath-patched and breaks the bun-compiled ELF)
+/// 3. bundled sidecar next to the app executable (legacy externalBin layout)
+/// 4. dev-compiled binary (piely-agent/bin)
+/// 5. agent.mjs with node
+fn agent_command(app: &AppHandle) -> Result<(String, Vec<String>), String> {
     if let Ok(path) = env::var("PIELY_AGENT_PATH") {
         if path.ends_with(".mjs") || path.ends_with(".js") {
             let node = env::var("PIELY_NODE_BIN").unwrap_or_else(|_| "node".to_string());
@@ -97,11 +99,23 @@ fn agent_command() -> Result<(String, Vec<String>), String> {
         }
         return Ok((path, vec![]));
     }
+    let name = if cfg!(windows) { "piely-agent.exe" } else { "piely-agent" };
+    if let Ok(dir) = app.path().resource_dir() {
+        let resource = dir.join(name);
+        if resource.exists() {
+            // squashfs (AppImage) may drop the exec bit; make sure we can run it
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&resource, std::fs::Permissions::from_mode(0o755));
+            }
+            return Ok((resource.to_string_lossy().into_owned(), vec![]));
+        }
+    }
     if let Some(dir) = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
     {
-        let name = if cfg!(windows) { "piely-agent.exe" } else { "piely-agent" };
         let bundled = dir.join(name);
         if bundled.exists() {
             return Ok((bundled.to_string_lossy().into_owned(), vec![]));
@@ -126,7 +140,7 @@ fn auth_file(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn spawn_agent(app: &AppHandle) -> Result<(Child, ChildStdin, ChildStdout), String> {
-    let (program, args) = agent_command()?;
+    let (program, args) = agent_command(app)?;
     let mut cmd = Command::new(program);
     cmd.args(args)
         .arg("--auth-file")

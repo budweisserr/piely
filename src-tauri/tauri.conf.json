@@ -44,11 +44,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "info.plist",
-      "piely.desktop"
-    ],
-    "externalBin": ["binaries/whisper-cli", "binaries/piely-agent"],
+    "resources": {
+      "info.plist": "info.plist",
+      "piely.desktop": "piely.desktop",
+      "../piely-agent/bin/piely-agent": "piely-agent"
+    },
+    "externalBin": ["binaries/whisper-cli"],
     "macOS": {
       "minimumSystemVersion": "10.13"
     }

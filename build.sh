@@ -29,7 +29,13 @@ fi
 # Fallback at runtime: node + agent.mjs.
 if command -v bun >/dev/null 2>&1; then
   mkdir -p piely-agent/bin
-  bun build --compile piely-agent/agent.mjs --outfile piely-agent/bin/piely-agent
+  # Bundle to a single file first: bun 1.3.x --compile of the multi-module
+  # pi-ai graph produces an executable that segfaults at startup (embedded
+  # graph corruption); compiling the bundle avoids it.
+  bun build piely-agent/agent.mjs --target=bun --outfile /tmp/piely-agent.bundle.mjs
+  bun build --compile /tmp/piely-agent.bundle.mjs --outfile piely-agent/bin/piely-agent
+  # tauri bundles this as a resource under the plain name; bun appends .exe on Windows
+  if [ -f piely-agent/bin/piely-agent.exe ]; then mv piely-agent/bin/piely-agent.exe piely-agent/bin/piely-agent; fi
   echo "==> Compiled pi sidecar (bun)"
 fi
 
@@ -41,10 +47,7 @@ if command -v rustc >/dev/null 2>&1; then
     cp whisper.cpp/build/bin/whisper-cli "src-tauri/binaries/whisper-cli-$TRIPLE"
     echo "==> Staged whisper-cli-$TRIPLE for bundling"
   fi
-  if [ -f piely-agent/bin/piely-agent ]; then
-    cp piely-agent/bin/piely-agent "src-tauri/binaries/piely-agent-$TRIPLE"
-    echo "==> Staged piely-agent-$TRIPLE for bundling"
-  fi
+
 fi
 
 if [ "$MODE" = "dev" ]; then
