@@ -70,6 +70,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # linuxdeploy can't mount AppImages (no FUSE on GH runners); extract instead
           APPIMAGE_EXTRACT_AND_RUN: "1"
+          # linuxdeploy's bundled strip (old binutils) chokes on .relr.dyn sections
+          # in modern distro libs -> skip stripping ("unknown type [0x13] section .relr.dyn")
+          NO_STRIP: "1"
 
       - name: Upload bundles
         uses: actions/upload-artifact@v4
