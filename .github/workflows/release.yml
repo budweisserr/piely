@@ -42,6 +42,7 @@ jobs:
           cmake --build whisper.cpp/build --config Release
 
       - name: Compile pi sidecar (bun)
+        shell: bash
         run: |
           bun install --cwd piely-agent
           # Bundle to a single file first: bun 1.3.x --compile of the multi-module
