@@ -72,6 +72,8 @@ pub async fn local_transcribe(
     // whisper-cli is a blocking subprocess; run it off the async runtime.
     let result = tauri::async_runtime::spawn_blocking(move || {
         Command::new(whisper_cli_path())
+            // -l auto: auto-detect language (whisper-cli defaults to "en", which
+            // garbles non-English audio even on multilingual models)
             // -t: use all cores (whisper.cpp defaults to 4); -fa: flash attention
             // (Metal/CUDA speedup, safe fallback elsewhere)
             .args([
@@ -79,6 +81,8 @@ pub async fn local_transcribe(
                 model_arg.as_str(),
                 "-f",
                 wav_arg.as_str(),
+                "-l",
+                "auto",
                 "-oj",
                 "-nt",
                 "-np",
