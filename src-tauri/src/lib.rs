@@ -96,6 +96,16 @@ pub fn run() {
             speaker::get_output_devices,
         ])
         .setup(|app| {
+            // Run hidden: no Dock icon / Cmd-Tab entry so nobody sees the app running.
+            // The frontend settings toggle can still opt back in (set_app_icon_visibility).
+            #[cfg(target_os = "macos")]
+            if let Err(e) = app
+                .handle()
+                .set_activation_policy(tauri::ActivationPolicy::Accessory)
+            {
+                eprintln!("Failed to set activation policy: {}", e);
+            }
+
             // Setup main window positioning
             window::setup_main_window(app).expect("Failed to setup main window");
             #[cfg(target_os = "macos")]

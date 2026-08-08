@@ -324,16 +324,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
         // Only apply autostart on the very first launch
         if (!autostartInitialized) {
-          const autostartEnabled = customizable?.autostart?.isEnabled ?? true;
+          // Mark as initialized first so a failed call never re-runs this
+          // and re-enables autostart behind the user's back.
+          safeLocalStorage.setItem(STORAGE_KEYS.AUTOSTART_INITIALIZED, "true");
+
+          // closure's `customizable` is the first-render default (on);
+          // read the stored preference instead.
+          const autostartEnabled = getCustomizableState().autostart.isEnabled;
 
           if (autostartEnabled) {
             await enable();
           } else {
             await disable();
           }
-
-          // Mark as initialized so this never runs again
-          safeLocalStorage.setItem(STORAGE_KEYS.AUTOSTART_INITIALIZED, "true");
         }
       } catch (error) {
         console.debug("Autostart initialization skipped:", error);

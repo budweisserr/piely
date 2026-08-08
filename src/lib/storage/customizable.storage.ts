@@ -18,7 +18,7 @@ export interface CustomizableState {
 }
 
 export const DEFAULT_CUSTOMIZABLE_STATE: CustomizableState = {
-  appIcon: { isVisible: true },
+  appIcon: { isVisible: false },
   alwaysOnTop: { isEnabled: true },
   autostart: { isEnabled: true },
   cursor: { type: "invisible" },
