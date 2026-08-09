@@ -99,31 +99,40 @@ fn agent_command(app: &AppHandle) -> Result<(String, Vec<String>), String> {
         }
         return Ok((path, vec![]));
     }
-    let name = if cfg!(windows) { "piely-agent.exe" } else { "piely-agent" };
+    // The bundled resource is always named "piely-agent" (tauri.conf.json); on
+    // Windows dev machines bun may also emit piely-agent.exe.
+    let candidates = ["piely-agent", "piely-agent.exe"];
     if let Ok(dir) = app.path().resource_dir() {
-        let resource = dir.join(name);
-        if resource.exists() {
-            // squashfs (AppImage) may drop the exec bit; make sure we can run it
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&resource, std::fs::Permissions::from_mode(0o755));
+        for name in candidates {
+            let resource = dir.join(name);
+            if resource.exists() {
+                // squashfs (AppImage) may drop the exec bit; make sure we can run it
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(&resource, std::fs::Permissions::from_mode(0o755));
+                }
+                return Ok((resource.to_string_lossy().into_owned(), vec![]));
             }
-            return Ok((resource.to_string_lossy().into_owned(), vec![]));
         }
     }
     if let Some(dir) = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
     {
-        let bundled = dir.join(name);
-        if bundled.exists() {
-            return Ok((bundled.to_string_lossy().into_owned(), vec![]));
+        for name in candidates {
+            let bundled = dir.join(name);
+            if bundled.exists() {
+                return Ok((bundled.to_string_lossy().into_owned(), vec![]));
+            }
         }
     }
-    let dev_bin = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../piely-agent/bin/piely-agent");
-    if dev_bin.exists() {
-        return Ok((dev_bin.to_string_lossy().into_owned(), vec![]));
+    let dev_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../piely-agent/bin");
+    for name in ["piely-agent", "piely-agent.exe"] {
+        let dev_bin = dev_dir.join(name);
+        if dev_bin.exists() {
+            return Ok((dev_bin.to_string_lossy().into_owned(), vec![]));
+        }
     }
     let node = env::var("PIELY_NODE_BIN").unwrap_or_else(|_| "node".to_string());
     Ok((node, vec![agent_path()?.to_string_lossy().into_owned()]))
