@@ -41,7 +41,7 @@ pub async fn local_transcribe(
     model_path: Option<String>,
 ) -> Result<String, String> {
     let trimmed = audio_base64.trim();
-    let b64 = trimmed.split(',').last().unwrap_or(trimmed);
+    let b64 = trimmed.split(',').next_back().unwrap_or(trimmed);
     let bytes = general_purpose::STANDARD
         .decode(b64)
         .map_err(|e| format!("Failed to decode audio: {}", e))?;

@@ -29,6 +29,7 @@ export interface VadConfig {
   peak_threshold: number;
   silence_chunks: number;
   min_speech_chunks: number;
+  min_voiced_chunks: number;
   pre_speech_chunks: number;
   noise_gate_threshold: number;
   max_recording_duration_secs: number;
@@ -43,7 +44,8 @@ export const DEFAULT_VAD_CONFIG: VadConfig = {
   sensitivity_rms: 0.012, // Much less sensitive - only real speech
   peak_threshold: 0.035, // Higher threshold - filters clicks/noise
   silence_chunks: 120, // ~2.5s of required silence (at 48kHz) - tolerates pauses
-  min_speech_chunks: 4, // ~85ms - keeps short answers like "yes"
+  min_speech_chunks: 8, // ~170ms of loud frames - keeps short answers like "yes"
+  min_voiced_chunks: 12, // ~256ms first->last loud frame - kills clicks/knocks/dings
   pre_speech_chunks: 12, // ~0.27s - enough to catch word start
   noise_gate_threshold: 0.003, // Stronger noise filtering
   max_recording_duration_secs: 180, // 3 minutes default
@@ -112,12 +114,13 @@ export function useSystemAudio() {
       }
     }
 
-    // Load VAD config
+    // Load VAD config (merge with defaults so configs saved before a knob
+    // existed still carry the new field instead of sending undefined)
     const savedVadConfig = safeLocalStorage.getItem("vad_config");
     if (savedVadConfig) {
       try {
         const parsed = JSON.parse(savedVadConfig);
-        setVadConfig(parsed);
+        setVadConfig({ ...DEFAULT_VAD_CONFIG, ...parsed });
       } catch (error) {
         console.error("Failed to load VAD config:", error);
       }
@@ -213,13 +216,6 @@ export function useSystemAudio() {
             if (!capturing) return;
 
             const base64Audio = event.payload as string;
-            // Convert to blob
-            const binaryString = atob(base64Audio);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
-            const audioBlob = new Blob([bytes], { type: "audio/wav" });
 
             if (!selectedSttProvider.provider) {
               setError("No speech provider selected.");
@@ -245,7 +241,7 @@ export function useSystemAudio() {
               const transcription = await fetchSTT({
                 provider: providerConfig,
                 selectedProvider: selectedSttProvider,
-                audio: audioBlob,
+                audio: base64Audio,
                 signal: controller.signal,
               });
 

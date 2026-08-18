@@ -24,7 +24,7 @@ pub struct RegisteredShortcuts {
 
 impl Default for RegisteredShortcuts {
     fn default() -> Self {
-        RegisteredShortcuts {
+        Self {
             shortcuts: Mutex::new(HashMap::new()),
         }
     }
@@ -38,7 +38,7 @@ pub(crate) struct MoveWindowState {
 
 impl Default for MoveWindowState {
     fn default() -> Self {
-        MoveWindowState {
+        Self {
             tasks: Mutex::new(HashMap::new()),
         }
     }
@@ -212,7 +212,7 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
                 panel.show();
             }
             // Emit event to focus text input
-            window.emit("focus-text-input", json!({})).unwrap();
+            let _ = window.emit("focus-text-input", json!({}));
         }
         Err(e) => {
             eprintln!("Failed to check window visibility: {}", e);
@@ -224,18 +224,18 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
 fn handle_audio_shortcut<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         // Ensure window is visible
-        if let Ok(false) = window.is_visible() {
+        if matches!(window.is_visible(), Ok(false)) {
             if let Err(_e) = window.show() {
                 return;
             }
             if let Err(e) = window.set_focus() {
-                eprintln!("Failed to focus window: {}", e);
+                eprintln!("Failed to focus window: {e}");
             }
         }
 
         // Emit event to start audio recording
         if let Err(e) = window.emit("start-audio-recording", json!({})) {
-            eprintln!("Failed to emit audio recording event: {}", e);
+            eprintln!("Failed to emit audio recording event: {e}");
         }
     }
 }
@@ -245,7 +245,7 @@ fn handle_screenshot_shortcut<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         // Emit event to trigger screenshot - frontend will determine auto/manual mode
         if let Err(e) = window.emit("trigger-screenshot", json!({})) {
-            eprintln!("Failed to emit screenshot event: {}", e);
+            eprintln!("Failed to emit screenshot event: {e}");
         }
     }
 }
@@ -254,19 +254,19 @@ fn handle_screenshot_shortcut<R: Runtime>(app: &AppHandle<R>) {
 fn handle_system_audio_shortcut<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         // Ensure window is visible
-        if let Ok(false) = window.is_visible() {
+        if matches!(window.is_visible(), Ok(false)) {
             if let Err(e) = window.show() {
-                eprintln!("Failed to show window: {}", e);
+                eprintln!("Failed to show window: {e}");
                 return;
             }
             if let Err(e) = window.set_focus() {
-                eprintln!("Failed to focus window: {}", e);
+                eprintln!("Failed to focus window: {e}");
             }
         }
 
         // Emit event to toggle system audio capture - frontend will determine current state
         if let Err(e) = window.emit("toggle-system-audio", json!({})) {
-            eprintln!("Failed to emit system audio event: {}", e);
+            eprintln!("Failed to emit system audio event: {e}");
         }
     }
 }
@@ -360,12 +360,12 @@ pub fn update_shortcuts<R: Runtime>(
 
     for (action_id, shortcut_str, shortcut) in shortcuts_to_register {
         match app.global_shortcut().register(shortcut) {
-            Ok(_) => {
-                eprintln!("Registered shortcut: {} -> {}", action_id, shortcut_str);
+            Ok(()) => {
+                eprintln!("Registered shortcut: {action_id} -> {shortcut_str}");
                 successfully_registered.insert(action_id, shortcut);
             }
             Err(e) => {
-                eprintln!("Failed to register {} shortcut: {}", action_id, e);
+                eprintln!("Failed to register {action_id} shortcut: {e}");
                 registration_failures.push((action_id, shortcut_str, e.to_string()));
             }
         }
@@ -389,13 +389,13 @@ pub fn update_shortcuts<R: Runtime>(
     if !registration_failures.is_empty() {
         if let Some(window) = app.get_webview_window("main") {
             if let Err(e) = window.emit("shortcut-registration-error", &registration_failures) {
-                eprintln!("Failed to emit shortcut registration error event: {}", e);
+                eprintln!("Failed to emit shortcut registration error event: {e}");
             }
         }
 
         let error_messages: Vec<String> = registration_failures
             .into_iter()
-            .map(|(action, key, error)| format!("{} ({}) - {}", action, key, error))
+            .map(|(action, key, error)| format!("{action} ({key}) - {error}"))
             .collect();
 
         return Err(format!(
@@ -419,12 +419,12 @@ fn unregister_all_shortcuts<R: Runtime>(app: &AppHandle<R>) -> Result<(), String
     };
 
     for (action_id, shortcut) in registered.iter() {
-        match app.global_shortcut().unregister(shortcut.clone()) {
-            Ok(_) => {
-                eprintln!("Unregistered shortcut: {} -> {}", action_id, shortcut);
+        match app.global_shortcut().unregister(*shortcut) {
+            Ok(()) => {
+                eprintln!("Unregistered shortcut: {action_id} -> {shortcut}");
             }
             Err(e) => {
-                eprintln!("Failed to unregister shortcut {}: {}", shortcut, e);
+                eprintln!("Failed to unregister shortcut {shortcut}: {e}");
             }
         }
     }
@@ -543,8 +543,8 @@ fn handle_toggle_dashboard<R: Runtime>(app: &AppHandle<R>) {
     } else {
         // Window doesn't exist, create and show it
         match show_dashboard_window(app) {
-            Ok(_) => eprintln!("Dashboard window created and shown successfully"),
-            Err(e) => eprintln!("Failed to create/show dashboard window: {}", e),
+            Ok(()) => eprintln!("Dashboard window created and shown successfully"),
+            Err(e) => eprintln!("Failed to create/show dashboard window: {e}"),
         }
     }
 }
@@ -553,7 +553,7 @@ fn handle_toggle_dashboard<R: Runtime>(app: &AppHandle<R>) {
 fn handle_focus_input<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         // Ensure window is visible
-        if let Ok(false) = window.is_visible() {
+        if matches!(window.is_visible(), Ok(false)) {
             let _ = window.show();
         }
 
@@ -600,4 +600,22 @@ fn handle_move_window<R: Runtime>(app: &AppHandle<R>, direction: &str) {
 #[tauri::command]
 pub fn exit_app(app_handle: tauri::AppHandle) {
     app_handle.exit(0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_shortcut_key() {
+        assert!(validate_shortcut_key("CommandOrControl+Shift+Space".to_string()).unwrap());
+        assert!(validate_shortcut_key("Alt+X".to_string()).unwrap());
+        assert!(!validate_shortcut_key("NotAValidKeyCombination".to_string()).unwrap());
+    }
+
+    #[test]
+    fn test_move_window_state_default() {
+        let state = MoveWindowState::default();
+        assert!(state.tasks.lock().unwrap().is_empty());
+    }
 }

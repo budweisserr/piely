@@ -36,12 +36,20 @@ const COMPONENTS = {
   a: ({ children, href, ...props }: any) => {
     const handleClick = async (e: React.MouseEvent) => {
       e.preventDefault();
-      if (href) {
-        try {
+      if (!href) return;
+      try {
+        const parsed = new URL(href);
+        if (
+          parsed.protocol === "http:" ||
+          parsed.protocol === "https:" ||
+          parsed.protocol === "mailto:"
+        ) {
           await openUrl(href);
-        } catch (error) {
-          console.error("Failed to open URL:", error);
+        } else {
+          console.warn("Blocked opening untrusted URL scheme:", parsed.protocol);
         }
+      } catch (error) {
+        console.error("Invalid URL clicked:", error);
       }
     };
 

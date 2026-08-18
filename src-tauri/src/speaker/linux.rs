@@ -115,7 +115,8 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>> {
     context.disconnect();
     mainloop.quit(pulse::def::Retval(0));
 
-    Ok(Rc::try_unwrap(devices).unwrap().into_inner())
+    let dev_list = devices.borrow().clone();
+    Ok(dev_list)
 }
 
 pub fn get_output_devices() -> Result<Vec<AudioDevice>> {
@@ -213,7 +214,8 @@ pub fn get_output_devices() -> Result<Vec<AudioDevice>> {
     context.disconnect();
     mainloop.quit(pulse::def::Retval(0));
 
-    Ok(Rc::try_unwrap(devices).unwrap().into_inner())
+    let dev_list = devices.borrow().clone();
+    Ok(dev_list)
 }
 
 pub struct SpeakerInput {
@@ -367,7 +369,7 @@ impl SpeakerStream {
                     }
 
                     match simple.read(&mut buffer) {
-                        Ok(_) => {
+                        Ok(()) => {
                             // Convert byte buffer to f32 samples
                             let samples: Vec<f32> = buffer
                                 .chunks_exact(4)

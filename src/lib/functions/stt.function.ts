@@ -15,7 +15,7 @@ export interface STTParams {
     provider: string;
     variables: Record<string, string>;
   };
-  audio: File | Blob;
+  audio: File | Blob | string;
   /** Optional signal to abort the request (e.g. for timeouts) */
   signal?: AbortSignal;
 }
@@ -23,9 +23,13 @@ export interface STTParams {
 /**
  * Transcribe with local whisper.cpp (built by build.sh). Runs entirely on-device.
  */
-async function transcribeLocalWhisper(audio: File | Blob, modelPath: string): Promise<string> {
+async function transcribeLocalWhisper(
+  audio: File | Blob | string,
+  modelPath: string
+): Promise<string> {
   try {
-    const audioBase64 = await blobToBase64(audio);
+    const audioBase64 =
+      typeof audio === "string" ? audio : await blobToBase64(audio);
     const transcription = await invoke<string>("local_transcribe", {
       audioBase64,
       modelPath: modelPath || null,
@@ -59,6 +63,20 @@ export async function fetchSTT(params: STTParams): Promise<string> {
     if (!selectedProvider) throw new Error("Selected provider not provided");
     if (!audio) throw new Error("Audio file is required");
 
+    // Resolve audio to Blob if passed as base64 string
+    const audioBlob: Blob =
+      typeof audio === "string"
+        ? (() => {
+            const rawBase64 = audio.includes(",") ? audio.split(",")[1] : audio;
+            const binaryString = atob(rawBase64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            return new Blob([bytes], { type: "audio/wav" });
+          })()
+        : audio;
+
     let curlJson: any;
     try {
       curlJson = curl2Json(provider.curl);
@@ -71,8 +89,7 @@ export async function fetchSTT(params: STTParams): Promise<string> {
     }
 
     // Validate audio file
-    const file = audio as File;
-    if (file.size === 0) throw new Error("Audio file is empty");
+    if (audioBlob.size === 0) throw new Error("Audio file is empty");
     // maximum size of 10MB
     // const maxSize = 10 * 1024 * 1024;
     // if (file.size > maxSize) {
@@ -121,8 +138,8 @@ export async function fetchSTT(params: STTParams): Promise<string> {
       provider.curl.includes("-F ") || provider.curl.includes("--form");
     if (isForm) {
       const form = new FormData();
-      const freshBlob = new Blob([await audio.arrayBuffer()], {
-        type: audio.type,
+      const freshBlob = new Blob([await audioBlob.arrayBuffer()], {
+        type: audioBlob.type,
       });
       form.append("file", freshBlob, "audio.wav");
       const headerKeys = Object.keys(headers).map((k) =>
@@ -170,12 +187,13 @@ export async function fetchSTT(params: STTParams): Promise<string> {
       body = form;
     } else if (isBinaryUpload) {
       // Deepgram-style: raw binary body
-      body = new Blob([await audio.arrayBuffer()], {
-        type: audio.type,
+      body = new Blob([await audioBlob.arrayBuffer()], {
+        type: audioBlob.type,
       });
     } else {
       // Google-style: JSON payload with base64
-      allVariables.AUDIO = await blobToBase64(audio);
+      allVariables.AUDIO =
+        typeof audio === "string" ? audio : await blobToBase64(audioBlob);
       const dataObj = curlJson.data ? { ...curlJson.data } : {};
       body = JSON.stringify(deepVariableReplacer(dataObj, allVariables));
     }

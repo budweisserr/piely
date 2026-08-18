@@ -6,7 +6,7 @@ use tauri::{App, AppHandle, Manager, Runtime, WebviewWindow, WebviewWindowBuilde
 const TOP_OFFSET: i32 = 54;
 
 /// Sets up the main window with custom positioning
-pub fn setup_main_window(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
+pub fn setup_main_window(app: &App) -> Result<(), Box<dyn std::error::Error>> {
     // Try different possible window labels
     let window = app
         .get_webview_window("main")

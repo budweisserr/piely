@@ -93,7 +93,10 @@ fn agent_path() -> Result<PathBuf, String> {
 /// 5. agent.mjs with node
 fn agent_command(app: &AppHandle) -> Result<(String, Vec<String>), String> {
     if let Ok(path) = env::var("PIELY_AGENT_PATH") {
-        if path.ends_with(".mjs") || path.ends_with(".js") {
+        let is_js = std::path::Path::new(&path)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("mjs") || ext.eq_ignore_ascii_case("js"));
+        if is_js {
             let node = env::var("PIELY_NODE_BIN").unwrap_or_else(|_| "node".to_string());
             return Ok((node, vec![path]));
         }
@@ -175,7 +178,7 @@ fn spawn_agent(app: &AppHandle) -> Result<(Child, ChildStdin, ChildStdout), Stri
 }
 
 /// Get the shared agent, spawning it on first use or after it died.
-async fn ensure_agent(app: &AppHandle) -> Result<Arc<AgentHandle>, String> {
+fn ensure_agent(app: &AppHandle) -> Result<Arc<AgentHandle>, String> {
     let state = app.state::<PielyState>();
     let mut guard = state
         .agent
@@ -232,12 +235,12 @@ async fn ensure_agent(app: &AppHandle) -> Result<Arc<AgentHandle>, String> {
                         _ => Ok(msg.clone()),
                     };
                     if let Some(id) = msg["id"].as_u64() {
-                        if let Some(tx) = reader_agent
+                        let tx_opt = reader_agent
                             .pending
                             .lock()
                             .unwrap_or_else(|p| p.into_inner())
-                            .remove(&id)
-                        {
+                            .remove(&id);
+                        if let Some(tx) = tx_opt {
                             // login finished (done/error): drop the stored id
                             let state = reader_app.state::<PielyState>();
                             let mut login_id = state
@@ -275,7 +278,7 @@ async fn ensure_agent(app: &AppHandle) -> Result<Arc<AgentHandle>, String> {
 
 /// Send one command and await its reply (first non-event message with the id).
 async fn request(app: &AppHandle, mut msg: Value) -> Result<Value, String> {
-    let agent = ensure_agent(app).await?;
+    let agent = ensure_agent(app)?;
     let id = agent.next_id.fetch_add(1, Ordering::Relaxed);
     msg["id"] = Value::from(id);
     let (tx, rx) = oneshot::channel();
@@ -336,7 +339,7 @@ pub async fn piely_login(
     provider: String,
     auth_type: Option<String>,
 ) -> Result<(), String> {
-    let agent = ensure_agent(&app).await?;
+    let agent = ensure_agent(&app)?;
     let id = agent.next_id.fetch_add(1, Ordering::Relaxed);
     let msg = serde_json::json!({
         "id": id,

@@ -1,4 +1,60 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+#![allow(
+    clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
+    clippy::module_name_repetitions,
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::similar_names,
+    clippy::struct_excessive_bools,
+    clippy::must_use_candidate,
+    clippy::significant_drop_tightening,
+    clippy::future_not_send,
+    clippy::redundant_pub_crate,
+    clippy::unreadable_literal,
+    clippy::needless_pass_by_value,
+    clippy::match_same_arms,
+    clippy::option_if_let_else,
+    clippy::manual_let_else,
+    clippy::uninlined_format_args,
+    clippy::unnecessary_wraps,
+    clippy::cast_lossless,
+    clippy::imprecise_flops,
+    clippy::suboptimal_flops,
+    clippy::needless_borrow,
+    clippy::needless_pass_by_ref_mut,
+    clippy::explicit_iter_loop,
+    clippy::redundant_closure_for_method_calls,
+    clippy::cognitive_complexity,
+    clippy::single_match_else,
+    clippy::map_unwrap_or,
+    clippy::items_after_statements,
+    clippy::or_fun_call,
+    clippy::used_underscore_binding,
+    clippy::unused_self,
+    clippy::doc_markdown,
+    clippy::collapsible_else_if,
+    clippy::derive_partial_eq_without_eq,
+    clippy::let_underscore_untyped,
+    clippy::missing_const_for_fn,
+    clippy::semicolon_if_nothing_returned,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::float_cmp,
+    clippy::branches_sharing_code,
+    clippy::unnecessary_safety_doc,
+    clippy::blocks_in_conditions,
+    clippy::iter_with_drain,
+    clippy::case_sensitive_file_extension_comparisons,
+    clippy::use_self,
+    clippy::significant_drop_in_scrutinee,
+    clippy::ignored_unit_patterns,
+    clippy::equatable_if_let,
+    clippy::if_not_else
+)]
+
 mod capture;
 mod db;
 mod piely;
@@ -23,7 +79,7 @@ use tauri_nspanel::{cocoa::appkit::NSWindowCollectionBehavior, panel_delegate, W
 pub struct AudioState {
     stream_task: Mutex<Option<JoinHandle<()>>>,
     vad_config: Mutex<VadConfig>,
-    /// Set to request the capture loop to stop (cooperative, see speaker::commands)
+    /// Set to request the capture loop to stop (cooperative, see `speaker::commands`)
     stop_requested: Arc<AtomicBool>,
 }
 
@@ -103,7 +159,7 @@ pub fn run() {
                 .handle()
                 .set_activation_policy(tauri::ActivationPolicy::Accessory)
             {
-                eprintln!("Failed to set activation policy: {}", e);
+                eprintln!("Failed to set activation policy: {e}");
             }
 
             // Setup main window positioning
@@ -112,8 +168,8 @@ pub fn run() {
             init(app.app_handle());
             let app_handle = app.handle();
             if app_handle.get_webview_window("dashboard").is_none() {
-                if let Err(e) = window::create_dashboard_window(&app_handle) {
-                    eprintln!("Failed to pre-create dashboard window on startup: {}", e);
+                if let Err(e) = window::create_dashboard_window(app_handle) {
+                    eprintln!("Failed to pre-create dashboard window on startup: {e}");
                 }
             }
 
@@ -126,7 +182,7 @@ pub fn run() {
                     MacosLauncher::LaunchAgent,
                     Some(vec![]),
                 )) {
-                    eprintln!("Failed to initialize autostart plugin: {}", e);
+                    eprintln!("Failed to initialize autostart plugin: {e}");
                 }
             }
 
@@ -179,7 +235,7 @@ pub fn run() {
                 )
                 .expect("Failed to initialize global shortcut plugin");
             if let Err(e) = shortcuts::setup_global_shortcuts(app.handle()) {
-                eprintln!("Failed to setup global shortcuts: {}", e);
+                eprintln!("Failed to setup global shortcuts: {e}");
             }
             Ok(())
         });

@@ -22,9 +22,19 @@ pub struct VadConfig {
     pub peak_threshold: f32,
     pub silence_chunks: usize,
     pub min_speech_chunks: usize,
+    // Chunks between the first and last loud frame must span at least this
+    // many chunks: a click/knock/ding is loud but short-lived, and a handful
+    // of scattered taps fails the loud-frame count below.
+    #[serde(default = "default_min_voiced_chunks")]
+    pub min_voiced_chunks: usize,
     pub pre_speech_chunks: usize,
     pub noise_gate_threshold: f32,
     pub max_recording_duration_secs: u64,
+}
+
+// Backward-compatible default for configs saved before this knob existed.
+fn default_min_voiced_chunks() -> usize {
+    12
 }
 
 impl Default for VadConfig {
@@ -35,13 +45,22 @@ impl Default for VadConfig {
             sensitivity_rms: 0.012, // Much less sensitive - only real speech
             peak_threshold: 0.035,  // Higher threshold - filters clicks/noise
             silence_chunks: 120,    // ~2.5s of silence before stopping (at 48kHz)
-            min_speech_chunks: 4,   // ~85ms of clear speech - keeps "yes"/"okay"
+            min_speech_chunks: 8,   // ~170ms of loud frames - keeps "yes"/"okay", drops blips
+            min_voiced_chunks: 12,  // ~256ms first->last loud frame - kills clicks/knocks/ding
             pre_speech_chunks: 12,  // ~0.27s - enough to catch word start
             noise_gate_threshold: 0.003, // Stronger noise filtering
             max_recording_duration_secs: 180, // 3 minutes default
         }
     }
 }
+
+// Adaptive noise floor: speech must stand out at least this much above the
+// tracked background, or a loud room (fan, music, traffic) triggers VAD.
+const NOISE_FLOOR_RATIO: f32 = 2.0;
+// Chunks below this multiple of the floor count as real silence.
+const NOISE_FLOOR_HOLD: f32 = 1.5;
+// EMA rate for floor updates (slow: ~4s to track a changing room).
+const NOISE_FLOOR_EMA: f32 = 0.005;
 
 #[tauri::command]
 pub async fn start_system_audio_capture(
@@ -143,20 +162,21 @@ async fn run_vad_capture(
         ((config.silence_chunks as f32) * scale).round().max(1.0) as usize;
     let min_speech_chunk_limit =
         ((config.min_speech_chunks as f32) * scale).round().max(1.0) as usize;
+    let min_voiced_chunk_limit =
+        ((config.min_voiced_chunks as f32) * scale).round().max(1.0) as usize;
     let pre_chunk_capacity =
         ((config.pre_speech_chunks as f32) * scale).round().max(1.0) as usize;
     let pre_target = pre_chunk_capacity * config.hop_size;
-
-    // Energy below this is real silence. Chunks between here and the speech
-    // threshold are breaths/pauses: they must hold the utterance open, not
-    // end it (a mid-thought breath is not the end of a sentence).
-    let quiet_threshold = config.noise_gate_threshold * 1.5;
 
     let mut pre_speech: VecDeque<f32> = VecDeque::with_capacity(pre_target);
     let mut speech_buffer = Vec::new();
     let mut in_speech = false;
     let mut silence_chunks = 0;
     let mut speech_chunks = 0;
+    let mut chunk_index = 0; // chunk position inside the current utterance
+    let mut first_loud_chunk = 0;
+    let mut last_loud_chunk = 0;
+    let mut noise_floor_rms = 1e-4; // adaptive background estimate, quiet rooms only
     let max_samples = sr as usize * config.max_recording_duration_secs as usize; // safety cap per utterance
 
     loop {
@@ -181,13 +201,31 @@ async fn run_vad_capture(
             let mono = apply_noise_gate(&mono, config.noise_gate_threshold);
 
             let (rms, peak) = calculate_audio_metrics(&mono);
-            let is_speech = rms > config.sensitivity_rms || peak > config.peak_threshold;
+
+            // Adaptive sensitivity: require speech to stand out above the
+            // tracked background noise floor, so a loud room doesn't turn
+            // everything into "speech" and quiet speech isn't lost.
+            let effective_sensitivity =
+                config.sensitivity_rms.max(noise_floor_rms * NOISE_FLOOR_RATIO);
+            // Energy below this is real silence. Chunks between here and the
+            // speech threshold are breaths/pauses: they must hold the
+            // utterance open, not end it (a mid-thought breath is not the end
+            // of a sentence).
+            let quiet_threshold =
+                (config.noise_gate_threshold * 1.5).max(noise_floor_rms * NOISE_FLOOR_HOLD);
+
+            let is_speech = rms > effective_sensitivity || peak > config.peak_threshold;
 
             if is_speech {
-                if !in_speech {
+                if in_speech {
+                    last_loud_chunk = chunk_index;
+                } else {
                     // Speech START detected
                     in_speech = true;
                     speech_chunks = 0;
+                    chunk_index = 0;
+                    first_loud_chunk = 0;
+                    last_loud_chunk = 0;
 
                     // Include pre-speech buffer for natural sound
                     speech_buffer.extend(pre_speech.drain(..));
@@ -226,8 +264,14 @@ async fn run_vad_capture(
 
                     // Check if silence duration exceeds threshold
                     if silence_chunks >= silence_chunk_limit {
-                        // Verify minimum speech duration
-                        if speech_chunks >= min_speech_chunk_limit && !speech_buffer.is_empty()
+                        // Verify minimum speech duration: enough loud frames AND
+                        // a voiced span (first->last loud frame) long enough.
+                        // A click/knock/ding is loud but its span is a few
+                        // chunks; scattered taps fail the loud-frame count.
+                        let voiced_span = last_loud_chunk - first_loud_chunk + 1;
+                        if speech_chunks >= min_speech_chunk_limit
+                            && voiced_span >= min_voiced_chunk_limit
+                            && !speech_buffer.is_empty()
                         {
                             // Trim trailing silence (keep ~0.35s for a natural
                             // ending so soft word tails aren't cut off)
@@ -251,7 +295,7 @@ async fn run_vad_capture(
                         } else {
                             let _ = app.emit(
                                 "speech-discarded",
-                                "Audio too short (likely background noise)",
+                                "Audio too short or not speech (likely background noise)",
                             );
                         }
 
@@ -262,8 +306,14 @@ async fn run_vad_capture(
                         speech_chunks = 0;
                     }
                 } else {
-                    // Not in speech yet - maintain rolling pre-speech buffer
-                    pre_speech.extend(mono.into_iter());
+                    // Not in speech yet - maintain rolling pre-speech buffer.
+                    // Quiet chunks also update the noise floor (slow EMA) so
+                    // the adaptive sensitivity tracks the environment.
+                    if rms < quiet_threshold {
+                        noise_floor_rms += NOISE_FLOOR_EMA * (rms - noise_floor_rms);
+                    }
+
+                    pre_speech.extend(mono);
 
                     // Trim excess (maintain fixed size)
                     while pre_speech.len() > pre_target {
@@ -277,6 +327,8 @@ async fn run_vad_capture(
                     }
                 }
             }
+
+            chunk_index += 1;
         }
     }
 }
@@ -331,13 +383,16 @@ async fn run_continuous_capture(
                     break;
                 }
             }
-            _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
+            () = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
             }
         }
     }
 
     // Process and emit audio
-    if !audio_buffer.is_empty() {
+    if audio_buffer.is_empty() {
+        eprintln!("[audio] No audio captured in continuous mode");
+        let _ = app.emit("audio-encoding-error", "No audio recorded");
+    } else {
         // Apply noise gate
         let cleaned_audio = apply_noise_gate(&audio_buffer, config.noise_gate_threshold);
         let cleaned_audio = normalize_audio_level(&cleaned_audio, 0.1);
@@ -347,13 +402,10 @@ async fn run_continuous_capture(
                 let _ = app.emit("speech-detected", b64);
             }
             Err(e) => {
-                eprintln!("[audio] Failed to encode continuous audio: {}", e);
+                eprintln!("[audio] Failed to encode continuous audio: {e}");
                 let _ = app.emit("audio-encoding-error", e);
             }
         }
-    } else {
-        eprintln!("[audio] No audio captured in continuous mode");
-        let _ = app.emit("audio-encoding-error", "No audio recorded");
     }
 
     let _ = app.emit("continuous-recording-stopped", ());
@@ -531,18 +583,17 @@ pub async fn request_system_audio_access(app: AppHandle) -> Result<(), String> {
     }
     #[cfg(target_os = "linux")]
     {
-        let commands = ["pavucontrol", "gnome-control-center sound"];
-        let mut opened = false;
-
-        for cmd in &commands {
-            if app.shell().command(cmd).spawn().is_ok() {
-                opened = true;
-                break;
+        let pavu_opened = app.shell().command("pavucontrol").spawn().is_ok();
+        if !pavu_opened {
+            let gnome_opened = app
+                .shell()
+                .command("gnome-control-center")
+                .args(["sound"])
+                .spawn()
+                .is_ok();
+            if !gnome_opened {
+                eprintln!("[audio] Failed to open audio settings on Linux");
             }
-        }
-
-        if !opened {
-            eprintln!("[audio] Failed to open audio settings on Linux");
         }
     }
 
@@ -580,7 +631,57 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, String> {
 #[tauri::command]
 pub fn get_output_devices() -> Result<Vec<AudioDevice>, String> {
     crate::speaker::list_output_devices().map_err(|e| {
-        eprintln!("[audio] Failed to get output devices: {}", e);
-        format!("Failed to get output devices: {}", e)
+        eprintln!("[audio] Failed to get output devices: {e}");
+        format!("Failed to get output devices: {e}")
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_audio_metrics() {
+        let samples = [0.0, 0.5, -0.5, 0.0];
+        let (rms, peak) = calculate_audio_metrics(&samples);
+        assert!((peak - 0.5).abs() < 1e-5);
+        assert!((rms - (0.5 * 0.5 * 2.0 / 4.0_f32).sqrt()).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_apply_noise_gate() {
+        let samples = [0.001, 0.05, -0.002];
+        let gated = apply_noise_gate(&samples, 0.01);
+        assert_eq!(gated.len(), samples.len());
+        assert!(gated[0].abs() < 0.001); // attenuated
+        assert_eq!(gated[1], 0.05); // passed through above threshold
+    }
+
+    #[test]
+    fn test_normalize_audio_level() {
+        let samples = [0.01, -0.01, 0.01, -0.01];
+        let normalized = normalize_audio_level(&samples, 0.1);
+        assert_eq!(normalized.len(), samples.len());
+        let (norm_rms, _) = calculate_audio_metrics(&normalized);
+        assert!(norm_rms > 0.05);
+    }
+
+    #[test]
+    fn test_samples_to_wav_b64() {
+        let samples = vec![0.0f32; 16000];
+        let res = samples_to_wav_b64(16000, &samples);
+        assert!(res.is_ok());
+        let b64 = res.unwrap();
+        assert!(!b64.is_empty());
+    }
+
+    #[test]
+    fn test_vad_config_defaults() {
+        let config = VadConfig::default();
+        assert!(config.enabled);
+        assert_eq!(config.hop_size, 1024);
+        assert!(config.sensitivity_rms > 0.0);
+        assert_eq!(config.min_speech_chunks, 8);
+        assert_eq!(config.min_voiced_chunks, 12);
+    }
 }
