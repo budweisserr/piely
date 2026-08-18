@@ -9,7 +9,7 @@
 use serde_json::Value;
 use std::collections::HashMap;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -73,15 +73,67 @@ impl Default for PielyState {
     }
 }
 
-fn agent_path() -> Result<PathBuf, String> {
+fn find_node_bin() -> String {
+    if let Ok(node) = env::var("PIELY_NODE_BIN") {
+        return node;
+    }
+    for path in [
+        "/opt/homebrew/bin/node",
+        "/usr/local/bin/node",
+        "/opt/homebrew/bin/bun",
+        "/usr/local/bin/bun",
+        "/usr/bin/node",
+        "/usr/bin/bun",
+    ] {
+        if Path::new(path).exists() {
+            return path.to_string();
+        }
+    }
+    if let Ok(home) = env::var("HOME") {
+        let bun_path = PathBuf::from(home).join(".bun/bin/bun");
+        if bun_path.exists() {
+            return bun_path.to_string_lossy().into_owned();
+        }
+    }
+    "node".to_string()
+}
+
+fn agent_path(app: &AppHandle) -> Result<PathBuf, String> {
     if let Ok(path) = env::var("PIELY_AGENT_PATH") {
-        return Ok(PathBuf::from(path));
+        let p = PathBuf::from(path);
+        if p.exists() {
+            return Ok(p);
+        }
+    }
+    if let Ok(dir) = app.path().resource_dir() {
+        for candidate in ["piely-agent/agent.mjs", "agent.mjs"] {
+            let p = dir.join(candidate);
+            if p.exists() {
+                return Ok(p);
+            }
+        }
+    }
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+    {
+        for candidate in [
+            "piely-agent/agent.mjs",
+            "agent.mjs",
+            "../Resources/piely-agent/agent.mjs",
+            "../Resources/agent.mjs",
+        ] {
+            let p = dir.join(candidate);
+            if p.exists() {
+                return Ok(p);
+            }
+        }
     }
     let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../piely-agent/agent.mjs");
     if dev_path.exists() {
         return Ok(dev_path);
     }
-    Err("piely-agent/agent.mjs not found. Set PIELY_AGENT_PATH or install the agent.".to_string())
+    Err("piely-agent/agent.mjs not found. Ensure piely-agent is installed or set PIELY_AGENT_PATH.".to_string())
 }
 
 /// Resolve the pi sidecar as (program, args-before-auth-file):
@@ -97,7 +149,7 @@ fn agent_command(app: &AppHandle) -> Result<(String, Vec<String>), String> {
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("mjs") || ext.eq_ignore_ascii_case("js"));
         if is_js {
-            let node = env::var("PIELY_NODE_BIN").unwrap_or_else(|_| "node".to_string());
+            let node = find_node_bin();
             return Ok((node, vec![path]));
         }
         return Ok((path, vec![]));
@@ -137,8 +189,8 @@ fn agent_command(app: &AppHandle) -> Result<(String, Vec<String>), String> {
             return Ok((dev_bin.to_string_lossy().into_owned(), vec![]));
         }
     }
-    let node = env::var("PIELY_NODE_BIN").unwrap_or_else(|_| "node".to_string());
-    Ok((node, vec![agent_path()?.to_string_lossy().into_owned()]))
+    let node = find_node_bin();
+    Ok((node, vec![agent_path(app)?.to_string_lossy().into_owned()]))
 }
 
 fn auth_file(app: &AppHandle) -> Result<PathBuf, String> {

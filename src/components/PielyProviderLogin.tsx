@@ -98,10 +98,11 @@ export const PielyProviderLogin = () => {
     try {
       await pielyLogin(provider.id, authType);
       await refresh();
+      setLoginProvider(null);
+      setPrompt(null);
+      setLoginError(null);
     } catch (err) {
       setLoginError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoginProvider(null);
     }
   };
 
@@ -119,9 +120,9 @@ export const PielyProviderLogin = () => {
   };
 
   const handleAnswer = async () => {
-    if (!promptValue.trim()) return;
     await pielyLoginAnswer(promptValue.trim());
     setPrompt(null);
+    setPromptValue("");
   };
 
   const handleSelectModel = async (providerId: string, modelId: string) => {
@@ -253,26 +254,48 @@ export const PielyProviderLogin = () => {
 
       {/* Interactive login dialog */}
       <Dialog
-        open={loginProvider !== null || prompt !== null}
+        open={loginProvider !== null || prompt !== null || loginError !== null}
         onOpenChange={(open) => {
-          if (!open) setLoginProvider(null);
+          if (!open) {
+            setLoginProvider(null);
+            setPrompt(null);
+            setLoginError(null);
+            setNotices([]);
+          }
         }}
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              Login to {loginProvider?.name ?? "provider"}
+              {loginError
+                ? "Login Failed"
+                : `Login to ${loginProvider?.name ?? "provider"}`}
             </DialogTitle>
             <DialogDescription>
-              Complete the login flow in this window. You can close this dialog
-              to cancel.
+              {loginError
+                ? "An error occurred during authentication. Please review the details below."
+                : "Complete the login flow in this window. You can close this dialog to cancel."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             {loginError && (
-              <p className="text-sm text-red-600 dark:text-red-400">
-                {loginError}
-              </p>
+              <div className="p-3 rounded-lg border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950 space-y-2">
+                <p className="text-xs text-red-600 dark:text-red-300 font-mono break-all whitespace-pre-wrap">
+                  {loginError}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full mt-2"
+                  onClick={() => {
+                    setLoginError(null);
+                    setLoginProvider(null);
+                    setNotices([]);
+                  }}
+                >
+                  Close
+                </Button>
+              </div>
             )}
             {notices.map((notice, index) => (
               <div
@@ -326,7 +349,7 @@ export const PielyProviderLogin = () => {
                 )}
               </div>
             ))}
-            {prompt && (
+            {prompt && !loginError && (
               <div className="space-y-2">
                 <label className="text-sm font-medium">{prompt.message}</label>
                 {prompt.type === "select" && prompt.options ? (
@@ -363,9 +386,10 @@ export const PielyProviderLogin = () => {
                 <Button
                   className="w-full"
                   onClick={handleAnswer}
-                  disabled={!promptValue.trim()}
                 >
-                  Submit
+                  {prompt.type === "text" && !promptValue.trim()
+                    ? "Continue"
+                    : "Submit"}
                 </Button>
               </div>
             )}
