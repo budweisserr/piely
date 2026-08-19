@@ -8,6 +8,6 @@
     "node": ">=22.19.0"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "^0.84.1"
+    "@earendil-works/pi-ai": "^0.84.2"
   }
 }
