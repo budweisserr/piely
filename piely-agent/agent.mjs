@@ -8,7 +8,7 @@
 //
 // Credentials are persisted to --auth-file (auth.json, same shape as pi's CLI).
 import { readFile, rename, writeFile } from "node:fs/promises";
-import { builtinModels, builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 
 const args = process.argv.slice(2);
 const authFlag = args.indexOf("--auth-file");
@@ -132,7 +132,7 @@ async function handle(msg) {
       send({
         id: msg.id,
         type: "providers",
-        providers: builtinProviders().map((p) => ({
+        providers: models.getProviders().map((p) => ({
           id: p.id,
           name: p.name,
           loggedIn: loggedIn.has(p.id),
@@ -146,7 +146,11 @@ async function handle(msg) {
       break;
     }
     case "models": {
-      const providerModels = models.getModels(msg.provider) ?? [];
+      // Let pi refresh any dynamic provider catalogs, then apply provider-owned
+      // availability rules (for example, an account-specific Copilot model
+      // picker) instead of exposing the static catalog directly.
+      await models.refresh();
+      const providerModels = await models.getAvailable(msg.provider);
       send({
         id: msg.id,
         type: "models",
@@ -181,9 +185,11 @@ async function handle(msg) {
       break;
     }
     case "stream": {
-      const model = models.getModel(msg.provider, msg.model);
+      const model = (await models.getAvailable(msg.provider)).find(
+        (candidate) => candidate.id === msg.model
+      );
       if (!model) {
-        send({ id: msg.id, type: "error", message: `Unknown model ${msg.provider}/${msg.model}` });
+        send({ id: msg.id, type: "error", message: `Unknown or unavailable model ${msg.provider}/${msg.model}` });
         break;
       }
       const context = {

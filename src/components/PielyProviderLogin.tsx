@@ -47,6 +47,9 @@ export const PielyProviderLogin = () => {
   const [modelsByProvider, setModelsByProvider] = useState<
     Record<string, PielyModel[]>
   >({});
+  const [loadingModels, setLoadingModels] = useState<Record<string, boolean>>(
+    {}
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,18 +61,31 @@ export const PielyProviderLogin = () => {
   const [promptValue, setPromptValue] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
 
+  const loadModels = async (providerId: string) => {
+    setLoadingModels((prev) => ({ ...prev, [providerId]: true }));
+    try {
+      const models = await pielyGetModels(providerId);
+      setModelsByProvider((prev) => ({ ...prev, [providerId]: models }));
+    } catch (loadError) {
+      setError(
+        `Failed to load models: ${
+          loadError instanceof Error ? loadError.message : String(loadError)
+        }`
+      );
+    } finally {
+      setLoadingModels((prev) => ({ ...prev, [providerId]: false }));
+    }
+  };
+
   const refresh = async () => {
     setError(null);
     const list = await pielyListProviders();
     setProviders(list);
-    // Load models for already-logged-in providers
-    for (const p of list.filter((p) => p.loggedIn)) {
-      pielyGetModels(p.id)
-        .then((models) =>
-          setModelsByProvider((prev) => ({ ...prev, [p.id]: models }))
-        )
-        .catch(() => {});
-    }
+    await Promise.all(
+      list
+        .filter((provider) => provider.loggedIn)
+        .map((provider) => loadModels(provider.id))
+    );
     setIsLoading(false);
   };
 
@@ -210,12 +226,20 @@ export const PielyProviderLogin = () => {
                   </div>
                   {provider.loggedIn && (
                     <div className="flex flex-col gap-1">
-                      <label className="text-xs text-muted-foreground">
+                      <label className="text-xs text-muted-foreground flex items-center gap-1">
                         Model
+                        {loadingModels[provider.id] && (
+                          <LoaderIcon className="h-3 w-3 animate-spin" />
+                        )}
                       </label>
                       <select
                         className="h-9 rounded-md border border-input/50 bg-background px-3 text-sm"
                         value={selected ? pielySelection?.model.id : ""}
+                        disabled={
+                          loadingModels[provider.id] &&
+                          models.length === 0
+                        }
+                        onFocus={() => loadModels(provider.id)}
                         onChange={(e) =>
                           handleSelectModel(provider.id, e.target.value)
                         }
