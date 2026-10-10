@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 MODE="${1:-build}"
 
 echo "==> Installing frontend + Rust dependencies"
-npm install
+npm --prefix frontend install
 
 echo "==> Installing pi sidecar dependencies (pi-ai)"
 (cd piely-agent && npm install)
@@ -37,14 +37,22 @@ if command -v bun >/dev/null 2>&1; then
   # tauri bundles this as a resource under the plain name; bun appends .exe on Windows
   if [ -f piely-agent/bin/piely-agent.exe ]; then mv piely-agent/bin/piely-agent.exe piely-agent/bin/piely-agent; fi
   echo "==> Compiled pi sidecar (bun)"
+else
+  echo "==> bun not found: skipping pi sidecar compile"
+  # Release bundles ship the compiled sidecar, so a leftover build goes out
+  # stale. Development runs agent.mjs from source and is not affected.
+  if [ -f piely-agent/bin/piely-agent ]; then
+    echo "    WARNING: piely-agent/bin/piely-agent is an old build and will be bundled as-is."
+    echo "    Install bun (https://bun.sh) and re-run before building a release."
+  fi
 fi
 
 # Stage sidecars for bundling (externalBin naming: <name>-<target-triple>)
 if command -v rustc >/dev/null 2>&1; then
-  mkdir -p src-tauri/binaries
+  mkdir -p backend/binaries
   TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
   if [ -f whisper.cpp/build/bin/whisper-cli ]; then
-    cp whisper.cpp/build/bin/whisper-cli "src-tauri/binaries/whisper-cli-$TRIPLE"
+    cp whisper.cpp/build/bin/whisper-cli "backend/binaries/whisper-cli-$TRIPLE"
     echo "==> Staged whisper-cli-$TRIPLE for bundling"
   fi
 

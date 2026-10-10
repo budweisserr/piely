@@ -2,7 +2,7 @@ version: 2
 updates:
   # Frontend + Tauri toolchain
   - package-ecosystem: "npm"
-    directory: "/"
+    directory: "/frontend"
     schedule:
       interval: "weekly"
     target-branch: "develop"
@@ -16,7 +16,7 @@ updates:
 
   # Rust backend
   - package-ecosystem: "cargo"
-    directory: "/src-tauri"
+    directory: "/backend"
     schedule:
       interval: "weekly"
     target-branch: "develop"
