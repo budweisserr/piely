@@ -1,93 +1,47 @@
-// Piely sidecar: bridges the pi-ai package (@earendil-works/pi-ai) to the Piely
-// Tauri app. Speaks NDJSON over stdio:
+// Piely sidecar: bridges @earendil-works/pi-ai to the Tauri app over NDJSON on
+// stdio. One JSON command per line in, one JSON message per line out:
 //
 //   in : {"id":1,"cmd":"list"|"models"|"login"|"logout"|"stream", ...}
+//   in : {"id":2,"cmd":"cancel_stream","streamId":1}
 //   in : {"id":1,"type":"answer","value":"..."}          (reply to a prompt)
 //   out: {"id":1,"type":"providers"|"models"|"prompt"|"notify"|"chunk", ...}
-//   out: {"id":1,"type":"done"} | {"id":1,"type":"error","message":"..."}
+//   out: {"id":1,"type":"tool_call","toolCall":{"id","name","arguments"}}
+//   out: {"id":1,"type":"done","message":"<text>","assistant":{...},"stopReason":"..."}
+//   out: {"id":1,"type":"error","message":"..."}
 //
-// Credentials are persisted to --auth-file (auth.json, same shape as pi's CLI).
-import { readFile, rename, writeFile } from "node:fs/promises";
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+// `stream` takes optional `tools` and returns the final assistant message, so
+// the caller can send it back with its tool results for the next turn.
+// `cancel_stream` aborts the stream with that `streamId`.
+//
+// Credentials go to --auth-file, in pi's auth.json shape.
+import { builtinModels, builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
+import { buildMessages } from "./lib/message-history.mjs";
+import { streamTurn } from "./lib/stream-turn.mjs";
+import { createLoginRunner } from "./lib/login-runner.mjs";
+import { FileCredentialStore } from "./lib/credential-store.mjs";
+
+// pi-ai hides its OAuth flows behind a variable specifier so bundlers cannot
+// follow them into Node-only code. A compiled binary then has no such file, so
+// the bundled copies are registered here instead. Harmless under plain node.
+registerBunOAuthFlows();
 
 const args = process.argv.slice(2);
 const authFlag = args.indexOf("--auth-file");
 const authPath = authFlag !== -1 ? args[authFlag + 1] : "auth.json";
 
-// --- File-backed credential store (single process, serialized writes) --------
-class FileCredentialStore {
-  constructor(path) {
-    this.path = path;
-    this.credentials = new Map();
-    this.loaded = this.load();
-    this.chains = new Map();
-  }
-
-  async load() {
-    try {
-      const parsed = JSON.parse(await readFile(this.path, "utf8"));
-      for (const [providerId, credential] of Object.entries(parsed)) {
-        this.credentials.set(providerId, credential);
-      }
-    } catch {
-      // missing/corrupt file == no credentials
-    }
-  }
-
-  async persist() {
-    const tmp = `${this.path}.tmp`;
-    await writeFile(tmp, JSON.stringify(Object.fromEntries(this.credentials), null, 2));
-    await rename(tmp, this.path);
-  }
-
-  enqueue(providerId, task) {
-    const previous = this.chains.get(providerId) ?? Promise.resolve();
-    const queued = previous.catch(() => {}).then(task);
-    this.chains.set(providerId, queued.catch(() => {}));
-    return queued;
-  }
-
-  async read(providerId) {
-    await this.loaded;
-    return this.credentials.get(providerId);
-  }
-
-  async list() {
-    await this.loaded;
-    return [...this.credentials].map(([providerId, credential]) => ({
-      providerId,
-      type: credential.type,
-    }));
-  }
-
-  modify(providerId, fn) {
-    return this.enqueue(providerId, async () => {
-      await this.loaded;
-      const current = this.credentials.get(providerId);
-      const next = await fn(current);
-      if (next !== undefined) this.credentials.set(providerId, next);
-      await this.persist();
-      return next ?? current;
-    });
-  }
-
-  delete(providerId) {
-    return this.enqueue(providerId, async () => {
-      await this.loaded;
-      this.credentials.delete(providerId);
-      await this.persist();
-    });
-  }
-}
-
 const store = new FileCredentialStore(authPath);
 const models = builtinModels({ credentials: store });
+
+/// Running streams by request id, so `cancel_stream` can abort one of them.
+const streamControllers = new Map();
 
 // --- stdin routing ------------------------------------------------------------
 import { createInterface } from "node:readline";
 
 const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
 const answerResolvers = new Map(); // request id -> resolve(value)
+const loginRunner = createLoginRunner({ send, answerResolvers });
 
 function send(msg) {
   try {
@@ -162,20 +116,17 @@ async function handle(msg) {
       break;
     }
     case "login": {
-      await models.login(msg.provider, msg.type ?? "oauth", {
-        prompt: (prompt) =>
-          new Promise((resolve) => {
-            answerResolvers.set(msg.id, resolve);
-            send({ id: msg.id, type: "prompt", prompt });
-            // manual_code prompts race a local callback server; when the
-            // server wins the flow aborts the prompt and continues on its own.
-            prompt.signal?.addEventListener("abort", () => {
-              answerResolvers.delete(msg.id);
-              resolve(undefined);
-            });
-          }),
-        notify: (event) => send({ id: msg.id, type: "notify", event }),
+      await loginRunner.login({
+        models,
+        provider: msg.provider,
+        type: msg.type,
+        requestId: msg.id,
       });
+      send({ id: msg.id, type: "done" });
+      break;
+    }
+    case "cancel_login": {
+      loginRunner.cancel();
       send({ id: msg.id, type: "done" });
       break;
     }
@@ -192,28 +143,37 @@ async function handle(msg) {
         send({ id: msg.id, type: "error", message: `Unknown or unavailable model ${msg.provider}/${msg.model}` });
         break;
       }
-      const context = {
-        systemPrompt: msg.systemPrompt,
-        messages: buildMessages(msg.messages, msg.provider, msg.model),
-      };
-      const stream = models.stream(model, context);
-      let fullText = "";
-      for await (const event of stream) {
-        if (event.type === "text_delta") {
-          fullText += event.delta;
-          send({ id: msg.id, type: "chunk", text: event.delta });
-        } else if (event.type === "error") {
-          send({
-            id: msg.id,
-            type: "error",
-            message: event.error?.errorMessage ?? "Stream failed",
-          });
-          return;
-        } else if (event.type === "done") {
-          break;
-        }
+      // One controller per stream: `cancel_stream` aborts just this request, so
+      // a cancelled turn stops costing tokens instead of running to the end.
+      const controller = new AbortController();
+      streamControllers.set(msg.id, controller);
+      try {
+        const turn = await streamTurn(models, model, {
+          systemPrompt: msg.systemPrompt,
+          messages: msg.messages,
+          tools: msg.tools,
+          signal: controller.signal,
+          onEvent: (event) => send({ id: msg.id, ...event }),
+        });
+        send({
+          id: msg.id,
+          type: "done",
+          message: turn.text,
+          assistant: turn.assistant,
+          stopReason: turn.stopReason,
+        });
+      } finally {
+        streamControllers.delete(msg.id);
       }
-      send({ id: msg.id, type: "done", message: fullText });
+      break;
+    }
+    case "cancel_stream": {
+      // Aborting makes the running stream finish (with an error message), which
+      // resolves the stream's own request on the Rust side.
+      const controller = streamControllers.get(msg.streamId);
+      streamControllers.delete(msg.streamId);
+      controller?.abort();
+      send({ id: msg.id, type: "done" });
       break;
     }
     default:
@@ -221,57 +181,89 @@ async function handle(msg) {
   }
 }
 
-// --- message conversion ---------------------------------------------------------
-function buildMessages(raw, provider, model) {
-  let timestamp = Date.now();
-  return raw.map((m) => {
-    timestamp += 1;
-    if (m.role === "assistant") {
-      return {
-        role: "assistant",
-        content: [{ type: "text", text: m.content }],
-        provider,
-        model,
-        api: "openai-chat-completions",
-        timestamp,
-        usage: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 0,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-        },
-        stopReason: "stop",
-      };
-    }
-    if (Array.isArray(m.content)) {
-      return { role: "user", content: m.content, timestamp };
-    }
-    return { role: "user", content: m.content, timestamp };
-  });
-}
-
 // --- self check -----------------------------------------------------------------
+// Runs inside the compiled binary, so it must not depend on the test files.
 if (process.argv.includes("--selfcheck")) {
   const providers = builtinProviders();
   if (!providers.some((p) => p.id === "anthropic") || !providers.some((p) => p.id === "google")) {
     console.error("selfcheck failed: expected builtin providers");
     process.exit(1);
   }
-  const msgs = buildMessages(
+
+  // Providers such as opencode re-serve one model id through several APIs, so a
+  // rebuilt history message must carry the api of the model being called.
+  const model = { provider: "opencode", id: "big-pickle", api: "openai-completions" };
+  const history = buildMessages(
     [
       { role: "user", content: "hi" },
       { role: "assistant", content: "hello" },
       { role: "user", content: [{ type: "text", text: "x" }] },
     ],
-    "anthropic",
-    "claude-sonnet-4-5"
+    model
   );
-  if (msgs.length !== 3 || msgs[1].role !== "assistant" || msgs[1].stopReason !== "stop") {
+  if (
+    history.length !== 3 ||
+    history[1].role !== "assistant" ||
+    history[1].api !== model.api ||
+    history[1].provider !== model.provider ||
+    history[1].model !== model.id ||
+    history[1].stopReason !== "stop"
+  ) {
     console.error("selfcheck failed: message conversion");
     process.exit(1);
   }
+
+  // Tool turns echo the assistant message back together with toolResult
+  // messages; both must survive the conversion untouched.
+  const assistantTurn = {
+    role: "assistant",
+    content: [{ type: "toolCall", id: "call_1", name: "find_files", arguments: { query: "x" } }],
+    provider: model.provider,
+    model: model.id,
+    api: model.api,
+    stopReason: "toolUse",
+    timestamp: 1,
+  };
+  const toolOutput = {
+    role: "toolResult",
+    toolCallId: "call_1",
+    toolName: "find_files",
+    content: [{ type: "text", text: "[]" }],
+    isError: false,
+    timestamp: 2,
+  };
+  const roundTrip = buildMessages(
+    [{ role: "user", content: "find x" }, assistantTurn, toolOutput],
+    model
+  );
+  if (
+    roundTrip[1].content?.[0]?.name !== "find_files" ||
+    roundTrip[1].stopReason !== "toolUse" ||
+    roundTrip[2].role !== "toolResult" ||
+    roundTrip[2].toolCallId !== "call_1"
+  ) {
+    console.error("selfcheck failed: tool message conversion");
+    process.exit(1);
+  }
+
+  // The compiled binary has no OAuth flow files: login works only because
+  // registerBunOAuthFlows() ran above. A bogus method fails at the first local
+  // prompt, so this check needs no network.
+  try {
+    await models.login("openai-codex", "oauth", {
+      prompt: async () => "",
+      notify: () => {},
+    });
+    console.error("selfcheck failed: oauth login unexpectedly continued");
+    process.exit(1);
+  } catch (error) {
+    const message = String(error?.message ?? error);
+    if (/cannot find module|no such file/i.test(message)) {
+      console.error(`selfcheck failed: oauth flows are not bundled (${message})`);
+      process.exit(1);
+    }
+  }
+
   console.log("selfcheck ok");
   process.exit(0);
 }

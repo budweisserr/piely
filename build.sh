@@ -7,10 +7,34 @@ cd "$(dirname "$0")"
 MODE="${1:-build}"
 
 echo "==> Installing frontend + Rust dependencies"
-npm install
+npm --prefix frontend install
 
 echo "==> Installing pi sidecar dependencies (pi-ai)"
 (cd piely-agent && npm install)
+
+SIDECAR="piely-agent/bin/piely-agent"
+
+# Release bundles ship the compiled sidecar, so building one needs bun. Saying
+# so here beats shipping a bundle whose logins fail later.
+if [ "$MODE" != "dev" ] && ! command -v bun >/dev/null 2>&1 && [ ! -f "$SIDECAR" ]; then
+  echo "ERROR: release bundles ship a compiled pi sidecar, and bun is not installed." >&2
+  echo "       Install bun (https://bun.sh), or use ./build.sh dev (runs agent.mjs)." >&2
+  exit 1
+fi
+
+# The sidecar checks itself (see piely-agent/README.md): a binary built without
+# the bundled OAuth flows only fails at the first login, with an error that says
+# nothing about rebuilding. Whatever is about to be bundled has to pass here.
+verify_sidecar() {
+  [ -f "$SIDECAR" ] || return 0
+  if ! "$SIDECAR" --selfcheck >/dev/null 2>&1; then
+    echo "ERROR: $SIDECAR fails its self check and must not be bundled:" >&2
+    "$SIDECAR" --selfcheck 2>&1 | tail -n 5 >&2 || true
+    echo "       Install bun (https://bun.sh) and re-run: it recompiles the sidecar." >&2
+    exit 1
+  fi
+  echo "==> pi sidecar self check passed"
+}
 
 echo "==> Building whisper.cpp (local STT)"
 cmake -S whisper.cpp -B whisper.cpp/build \
@@ -37,14 +61,19 @@ if command -v bun >/dev/null 2>&1; then
   # tauri bundles this as a resource under the plain name; bun appends .exe on Windows
   if [ -f piely-agent/bin/piely-agent.exe ]; then mv piely-agent/bin/piely-agent.exe piely-agent/bin/piely-agent; fi
   echo "==> Compiled pi sidecar (bun)"
+else
+  echo "==> bun not found: keeping the existing sidecar build"
+  [ -f "$SIDECAR" ] && echo "    WARNING: $SIDECAR is from an earlier build (checked below)."
 fi
+
+verify_sidecar
 
 # Stage sidecars for bundling (externalBin naming: <name>-<target-triple>)
 if command -v rustc >/dev/null 2>&1; then
-  mkdir -p src-tauri/binaries
+  mkdir -p backend/binaries
   TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
   if [ -f whisper.cpp/build/bin/whisper-cli ]; then
-    cp whisper.cpp/build/bin/whisper-cli "src-tauri/binaries/whisper-cli-$TRIPLE"
+    cp whisper.cpp/build/bin/whisper-cli "backend/binaries/whisper-cli-$TRIPLE"
     echo "==> Staged whisper-cli-$TRIPLE for bundling"
   fi
 
