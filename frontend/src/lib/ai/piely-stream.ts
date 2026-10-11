@@ -8,6 +8,7 @@ import type { Message } from "@/types";
 import type { ToolCall, ToolDefinition } from "../tools/tool-definitions.ts";
 import { CHUNK_POLL_INTERVAL_MS } from "../chat/constants.ts";
 import { getPielySelection } from "./piely-selection.ts";
+import { explainProviderError } from "./provider-errors.ts";
 
 // --- pi (piely-agent sidecar) streaming ---------------------------------------
 
@@ -24,6 +25,17 @@ export type PielyStreamEvent =
   | { type: "done"; result: PielyTurnResult };
 
 /** Messages the Rust side pushes through the per-invocation stream channel. */
+/**
+ * The tool list is the same array on every step of a turn; stringify it once.
+ */
+let cachedTools: { source: unknown; json: string } | null = null;
+const serializeTools = (tools: ToolDefinition[]): string => {
+  if (cachedTools?.source !== tools) {
+    cachedTools = { source: tools, json: JSON.stringify(tools) };
+  }
+  return cachedTools.json;
+};
+
 type PielyStreamMessage =
   | { type: "chunk"; text: string }
   | { type: "tool_call"; toolCall: ToolCall }
@@ -92,7 +104,7 @@ export async function* streamPielyTurn(params: {
     model: piely.model.id,
     systemPrompt,
     messages: JSON.stringify(messages),
-    tools: tools && tools.length > 0 ? JSON.stringify(tools) : null,
+    tools: tools && tools.length > 0 ? serializeTools(tools) : null,
     streamId,
     onEvent: channel,
   })
@@ -192,6 +204,6 @@ export async function* fetchPielyResponse(params: {
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    yield `Pi error: ${errorMessage}`;
+    yield `Pi error: ${explainProviderError(errorMessage)}`;
   }
 }

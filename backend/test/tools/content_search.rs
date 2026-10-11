@@ -1,4 +1,6 @@
+use super::super::limits::MAX_SCAN_DEPTH;
 use super::*;
+use std::io::Write;
 
 #[test]
 fn test_query_terms_splits_and_lowercases() {
@@ -105,6 +107,64 @@ fn test_content_search_finds_files_by_what_is_inside_them() {
     );
     assert_eq!(markdown_only.matches.len(), 1);
     assert!(markdown_only.matches[0].path.ends_with("notes.md"));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The user's case: the lab work is a .docx, and its text is what is asked for.
+#[test]
+fn test_content_search_reads_documents() {
+    let dir = std::env::temp_dir().join(format!("piely-search-doc-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir");
+
+    let file = std::fs::File::create(dir.join("lab1.docx")).expect("fixture file");
+    let mut zip = zip::ZipWriter::new(file);
+    zip.start_file("word/document.xml", zip::write::SimpleFileOptions::default())
+        .expect("zip member");
+    zip.write_all(
+        r#"<w:document><w:body><w:p><w:r><w:t>Лабораторна робота 1</w:t></w:r></w:p><w:p><w:r><w:t>Machine learning: kNN</w:t></w:r></w:p></w:body></w:document>"#
+            .as_bytes(),
+    )
+    .expect("zip member text");
+    zip.finish().expect("zip trailer");
+
+    let roots = vec![(dir.clone(), MAX_SCAN_DEPTH)];
+    let found = search_for_content(&roots, &query_terms("machine learning"), &[], 10);
+
+    assert_eq!(found.documents_read, 1, "the docx was unpacked");
+    assert_eq!(found.skipped_binary, 0);
+    let hit = found.matches.first().expect("the docx matches");
+    assert!(hit.path.ends_with("lab1.docx"), "{}", hit.path);
+    assert_eq!(hit.terms_matched, 2);
+    assert!(
+        hit.snippets.iter().any(|s| s.contains("Machine learning")),
+        "{:?}",
+        hit.snippets
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+
+/// Credential files are unreadable to the model even when they sit in a folder
+/// it is allowed to search: the search never asks the user first.
+#[test]
+fn test_content_search_skips_credential_files() {
+    let dir = std::env::temp_dir().join(format!("piely-search-secret-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir");
+    std::fs::write(dir.join("id_rsa"), "PRIVATE KEY roof repair\n").expect("fixture file");
+    std::fs::write(dir.join("server.key"), "PRIVATE KEY roof repair\n").expect("fixture file");
+    std::fs::write(dir.join(".env"), "TOKEN=roof repair\n").expect("fixture file");
+    std::fs::write(dir.join("notes.txt"), "roof repair\n").expect("fixture file");
+
+    let roots = vec![(dir.clone(), MAX_SCAN_DEPTH)];
+    let found = search_for_content(&roots, &query_terms("roof repair"), &[], 10);
+
+    let paths: Vec<&str> = found.matches.iter().map(|m| m.path.as_str()).collect();
+    assert_eq!(paths.len(), 1, "{paths:?}");
+    assert!(paths[0].ends_with("notes.txt"), "{paths:?}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

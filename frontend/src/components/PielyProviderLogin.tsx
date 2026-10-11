@@ -12,6 +12,11 @@ import { Header } from "./Header";import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "./ui";
 import {
   pielyListProviders,
@@ -242,27 +247,29 @@ export const PielyProviderLogin = () => {
                           <LoaderIcon className="h-3 w-3 animate-spin" />
                         )}
                       </label>
-                      <select
-                        className="h-9 rounded-md border border-input/50 bg-background px-3 text-sm"
+                      <Select
                         value={selected ? pielySelection?.model.id : ""}
-                        disabled={
-                          loadingModels[provider.id] &&
-                          models.length === 0
-                        }
-                        onFocus={() => loadModels(provider.id)}
-                        onChange={(e) =>
-                          handleSelectModel(provider.id, e.target.value)
+                        disabled={loadingModels[provider.id] && models.length === 0}
+                        onOpenChange={(open) => {
+                          if (open && models.length === 0) {
+                            loadModels(provider.id);
+                          }
+                        }}
+                        onValueChange={(modelId) =>
+                          handleSelectModel(provider.id, modelId)
                         }
                       >
-                        <option value="" disabled>
-                          Select a model...
-                        </option>
-                        {models.map((model) => (
-                          <option key={model.id} value={model.id}>
-                            {model.name}
-                          </option>
-                        ))}
-                      </select>
+                        <SelectTrigger className="h-9 w-full">
+                          <SelectValue placeholder="Select a model..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {models.map((model) => (
+                            <SelectItem key={model.id} value={model.id}>
+                              {model.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       {selected && (
                         <p className="text-xs text-amber-500 bg-amber-500/10 p-2 rounded-md">
                           {pielySelection?.model.input?.includes("image")
@@ -380,20 +387,18 @@ export const PielyProviderLogin = () => {
               <div className="space-y-2">
                 <label className="text-sm font-medium">{prompt.message}</label>
                 {prompt.type === "select" && prompt.options ? (
-                  <select
-                    className="w-full h-9 rounded-md border border-input/50 bg-background px-3 text-sm"
-                    value={promptValue}
-                    onChange={(e) => setPromptValue(e.target.value)}
-                  >
-                    <option value="" disabled>
-                      Choose...
-                    </option>
-                    {prompt.options.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  <Select value={promptValue} onValueChange={setPromptValue}>
+                    <SelectTrigger className="h-9 w-full">
+                      <SelectValue placeholder="Choose..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {prompt.options.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 ) : (
                   <Input
                     type={prompt.type === "secret" ? "password" : "text"}

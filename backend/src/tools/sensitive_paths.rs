@@ -1,11 +1,13 @@
 //! Paths the model may never read: credential file names, key extensions, and
 //! anything hidden, since dot-directories are where tools keep tokens. Opening
 //! a file is not covered here; that always asks the user, path on screen.
+use std::collections::HashSet;
 use std::path::{Component, Path};
+use std::sync::LazyLock;
 
 /// Credential stores the model never gets to read. Opening a file is not
 /// blocked here: that always asks the user first.
-const SECRET_DIRS: &[&str] = &[
+static SECRET_DIRS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| HashSet::from([
     ".ssh",
     ".gnupg",
     ".aws",
@@ -14,9 +16,14 @@ const SECRET_DIRS: &[&str] = &[
     ".docker",
     "Keychains",
     "gcloud",
-];
+    // Where macOS keeps every app's tokens and databases, this app's auth file
+    // included (~/Library/Application Support/<app>/piely-auth.json).
+    "application support",
+]));
 
-const SECRET_NAMES: &[&str] = &[
+static SECRET_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| HashSet::from([
+    // This app's own credentials: readable by nobody but the sidecar.
+    "piely-auth.json",
     "id_rsa",
     "id_dsa",
     "id_ecdsa",
@@ -26,23 +33,23 @@ const SECRET_NAMES: &[&str] = &[
     "netrc",
     "pgpass",
     "htpasswd",
-];
+]));
 
-const SECRET_EXTS: &[&str] = &[
+static SECRET_EXTS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| HashSet::from([
     "pem", "key", "p12", "pfx", "keystore", "jks", "kdbx", "keychain", "ppk", "asc", "gpg",
-];
+]));
 
-fn is_sensitive_path(path: &Path) -> bool {
+pub(super) fn is_sensitive_path(path: &Path) -> bool {
     let name = path
         .file_name()
         .map_or(String::new(), |n| n.to_string_lossy().to_lowercase());
-    if name.starts_with(".env") || SECRET_NAMES.contains(&name.as_str()) {
+    if name.starts_with(".env") || SECRET_NAMES.contains(name.as_str()) {
         return true;
     }
     let ext = path
         .extension()
         .map_or(String::new(), |e| e.to_string_lossy().to_lowercase());
-    if SECRET_EXTS.contains(&ext.as_str()) {
+    if SECRET_EXTS.contains(ext.as_str()) {
         return true;
     }
     // Hidden files and directories are where tools keep tokens: a GitHub token
@@ -53,7 +60,7 @@ fn is_sensitive_path(path: &Path) -> bool {
             return false;
         };
         let name = name.to_string_lossy().to_lowercase();
-        name.starts_with('.') || SECRET_DIRS.contains(&name.as_str())
+        name.starts_with('.') || SECRET_DIRS.contains(name.as_str())
     })
 }
 

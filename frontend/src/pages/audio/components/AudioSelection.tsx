@@ -130,6 +130,28 @@ export const AudioSelection = () => {
     }, 3000);
   };
 
+  /** What the trigger shows, including the reason when there is nothing to pick. */
+  const deviceLabel = (type: "input" | "output") => {
+    const fallback =
+      type === "input" ? "Select a microphone" : "Select an output device";
+    if (isLoadingDevices) {
+      return type === "input"
+        ? "Loading microphones..."
+        : "Loading output devices...";
+    }
+    const list = type === "input" ? devices.input : devices.output;
+    if (list.length === 0) {
+      return type === "input"
+        ? "No microphones found"
+        : "No output devices found";
+    }
+    const selected = list.find(
+      (device) => device.id === selectedAudioDevices[type].id
+    );
+    if (!selected) return fallback;
+    return `${selected.name}${selected.is_default ? " (Default)" : ""}`;
+  };
+
   return (
     <div id="audio" className="space-y-1 flex flex-col gap-4">
       {/* Microphone Input Section */}
@@ -149,31 +171,24 @@ export const AudioSelection = () => {
                 disabled={isLoadingDevices || devices?.input?.length === 0}
               >
                 <SelectTrigger className="w-full h-11 border-1 border-input/50 focus:border-primary/50 transition-colors">
-                  <div className="flex items-center gap-2">
-                    <MicIcon className="size-4" />
-                    <div className="text-sm font-medium truncate">
-                      {isLoadingDevices
-                        ? "Loading microphones..."
-                        : devices?.input?.length === 0
-                        ? "No microphones found"
-                        : devices?.input?.find(
-                            (mic) => mic?.id === selectedAudioDevices.input.id
-                          )?.name +
-                            (devices?.input?.find(
-                              (mic) => mic?.id === selectedAudioDevices.input.id
-                            )?.is_default
-                              ? " (Default)"
-                              : "") || "Select a microphone"}
+                  <div className="flex min-w-0 items-center gap-2">
+                    <MicIcon className="size-4 shrink-0" />
+                    <div
+                      className="truncate text-sm font-medium"
+                      title={deviceLabel("input")}
+                    >
+                      {deviceLabel("input")}
                     </div>
                   </div>
                 </SelectTrigger>
                 <SelectContent>
                   {devices?.input?.map((mic) => (
                     <SelectItem key={mic?.id} value={mic?.id}>
-                      <div className="flex items-center gap-2">
-                        <MicIcon className="size-4" />
-                        <div className="font-medium truncate">{mic?.name} </div>
-                        {mic?.is_default && " (Default)"}
+                      <div className="flex min-w-0 items-center gap-2">
+                        <MicIcon className="size-4 shrink-0" />
+                        <div className="truncate font-medium" title={mic?.name}>
+                          {mic?.name} {mic?.is_default && " (Default)"}
+                        </div>
                       </div>
                     </SelectItem>
                   ))}
@@ -245,32 +260,25 @@ export const AudioSelection = () => {
                 disabled={isLoadingDevices || devices?.output?.length === 0}
               >
                 <SelectTrigger className="w-full h-11 border-1 border-input/50 focus:border-primary/50 transition-colors">
-                  <div className="flex items-center gap-2">
-                    <HeadphonesIcon className="size-4" />
-                    <div className="text-sm font-medium truncate">
-                      {isLoadingDevices
-                        ? "Loading output devices..."
-                        : devices?.output?.length === 0
-                        ? "No output devices found"
-                        : devices?.output?.find(
-                            (output) =>
-                              output?.id === selectedAudioDevices.output.id
-                          )?.name +
-                            (devices?.output?.find(
-                              (output) =>
-                                output?.id === selectedAudioDevices.output.id
-                            )?.is_default
-                              ? " (Default)"
-                              : "") || "Select an output device"}
+                  <div className="flex min-w-0 items-center gap-2">
+                    <HeadphonesIcon className="size-4 shrink-0" />
+                    <div
+                      className="truncate text-sm font-medium"
+                      title={deviceLabel("output")}
+                    >
+                      {deviceLabel("output")}
                     </div>
                   </div>
                 </SelectTrigger>
                 <SelectContent>
                   {devices?.output?.map((output) => (
                     <SelectItem key={output?.id} value={output?.id}>
-                      <div className="flex items-center gap-2">
-                        <HeadphonesIcon className="size-4" />
-                        <div className="font-medium truncate">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <HeadphonesIcon className="size-4 shrink-0" />
+                        <div
+                          className="truncate font-medium"
+                          title={output?.name}
+                        >
                           {output?.name} {output?.is_default && " (Default)"}
                         </div>
                       </div>

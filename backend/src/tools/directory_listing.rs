@@ -1,11 +1,13 @@
 //! `list_directory`: a small map of a folder, for when the model has no idea
 //! where to look. Skips the same directories as the search tools.
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tauri::{AppHandle, Manager};
 
 use super::file_metadata::modified_ms;
 use super::limits::{DEFAULT_DIR_ENTRIES, MAX_DIR_DEPTH, SKIP_DIRS};
+use super::search_scope::resolve_dir;
+use super::sensitive_paths::is_sensitive_path;
 
 // --- directory map ---------------------------------------------------------------
 
@@ -33,7 +35,12 @@ fn collect_dir(dir: &Path, depth: usize, out: &mut Vec<DirEntryInfo>, capacity: 
             return;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') || SKIP_DIRS.contains(&name.as_str()) {
+        if name.starts_with('.') || SKIP_DIRS.contains(name.as_str()) {
+            continue;
+        }
+        // A listing is names, not contents, but a key file's name is already
+        // worth keeping away from the model.
+        if is_sensitive_path(&entry.path()) {
             continue;
         }
         let Ok(file_type) = entry.file_type() else {
@@ -61,19 +68,11 @@ pub async fn tools_list_directory(
     path: Option<String>,
     depth: Option<usize>,
 ) -> Result<serde_json::Value, String> {
-    let root = match path {
-        Some(dir) => {
-            let path = PathBuf::from(&dir);
-            if !path.is_dir() {
-                return Err(format!("not a directory: {}", dir));
-            }
-            path
-        }
-        None => app
-            .path()
-            .home_dir()
-            .map_err(|e| format!("Failed to locate home directory: {}", e))?,
-    };
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("Failed to locate home directory: {}", e))?;
+    let (root, note) = resolve_dir(home, path)?;
     let depth = depth.unwrap_or(1).clamp(1, MAX_DIR_DEPTH);
 
     // Same reason as find_files: this walks a real directory tree.
@@ -90,6 +89,7 @@ pub async fn tools_list_directory(
 
         serde_json::json!({
             "path": root.to_string_lossy(),
+            "note": note,
             "depth": depth,
             "truncated": truncated,
             "count": entries.len(),

@@ -1,12 +1,13 @@
 //! `find_files`: match names under the search roots. The walk uses an explicit
 //! stack (no recursion to blow up), never follows symlinks, and is capped.
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tauri::AppHandle;
 
 use super::file_metadata::modified_ms;
-use super::limits::{DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT, MAX_SCAN_DEPTH, MAX_SCAN_DIRS, SKIP_DIRS};
-use super::search_scope::search_roots;
+use super::limits::{DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT, MAX_SCAN_DIRS, SKIP_DIRS};
+use super::search_scope::{resolve_roots, search_roots};
+use super::sensitive_paths::is_sensitive_path;
 
 #[derive(Serialize)]
 struct FileHit {
@@ -19,17 +20,16 @@ struct FileHit {
     score: u32,
 }
 
-/// Lower is better. Exact/stem/prefix/substring matches beat fuzzy ones.
-fn match_score(name: &str, query: &str) -> Option<u32> {
+/// The scoring itself, on already-lowercased input: a walk calls this once per
+/// visited entry, so the query must not be lowered again for each of them.
+fn score_name(name: &str, query: &str) -> Option<u32> {
     if query.is_empty() {
         return Some(0);
     }
-    let name = name.to_lowercase();
-    let query = query.to_lowercase();
     if name == query {
         return Some(1);
     }
-    let stem = name.rsplit_once('.').map_or(name.as_str(), |(stem, _)| stem);
+    let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
     if stem == query {
         return Some(2);
     }
@@ -62,19 +62,11 @@ pub async fn tools_find_files(
         .unwrap_or(DEFAULT_FIND_LIMIT)
         .clamp(1, MAX_FIND_LIMIT);
 
-    let roots = match directory {
-        Some(dir) => {
-            let path = PathBuf::from(&dir);
-            if !path.is_dir() {
-                return Err(format!("directory does not exist: {}", dir));
-            }
-            vec![(path, MAX_SCAN_DEPTH)]
-        }
-        None => search_roots(&app),
-    };
+    let (roots, note) = resolve_roots(search_roots(&app), directory)?;
 
     // The walk reads real directories and can take seconds on a cold cache or a
     // network mount; it must not run on an async runtime worker thread.
+    let query = query.to_lowercase();
     let response = tauri::async_runtime::spawn_blocking(move || {
         let mut hits: Vec<FileHit> = Vec::new();
         let mut scanned = 0usize;
@@ -92,6 +84,7 @@ pub async fn tools_find_files(
 
         serde_json::json!({
             "query": query,
+            "note": note,
             "count": hits.len(),
             "results": hits,
         })
@@ -107,7 +100,8 @@ pub async fn tools_find_files(
 fn walk(
     root: &Path,
     depth: usize,
-    query: &str,
+    query: &str, // already lowercased
+    
     hits: &mut Vec<FileHit>,
     scanned: &mut usize,
     hit_capacity: usize,
@@ -126,17 +120,17 @@ fn walk(
                 return;
             }
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') {
+            if name.starts_with('.') || is_sensitive_path(&entry.path()) {
                 continue;
             }
             let Ok(file_type) = entry.file_type() else {
                 continue;
             };
             let is_dir = file_type.is_dir();
-            if is_dir && SKIP_DIRS.contains(&name.as_str()) {
+            if is_dir && SKIP_DIRS.contains(name.as_str()) {
                 continue;
             }
-            if let Some(score) = match_score(&name, query) {
+            if let Some(score) = score_name(&name.to_lowercase(), query) {
                 let meta = entry.metadata().ok();
                 hits.push(FileHit {
                     name: name.clone(),

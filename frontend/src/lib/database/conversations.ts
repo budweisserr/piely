@@ -1,6 +1,6 @@
 import { getDatabase } from "./config.ts";
 import { writeMessages } from "./write-messages.ts";
-import { safeLocalStorage } from "../storage/helper.ts";
+import { safeJsonParse, safeLocalStorage } from "../storage/helper.ts";
 import type { ChatConversation } from "@/types";
 
 // Legacy localStorage key for migration purposes
@@ -26,19 +26,6 @@ interface DbMessage {
   content: string;
   timestamp: number;
   attached_files: string | null; // JSON string
-}
-
-/**
- * Safely parse JSON with error handling
- */
-function safeJsonParse<T>(jsonString: string | null, fallback: T): T {
-  if (!jsonString) return fallback;
-  try {
-    return JSON.parse(jsonString) as T;
-  } catch (error) {
-    console.error("Failed to parse JSON:", error);
-    return fallback;
-  }
 }
 
 /**

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { COMPUTER_USE_TOOLS, isConfirmationTool } from "../../../src/lib/tools/tool-definitions.ts";
 
 test("anything that reads or opens local resources asks the user first", () => {
-  for (const name of ["read_file", "open_file", "open_app"]) {
+  for (const name of ["read_file", "write_file", "open_file", "open_app"]) {
     assert.equal(isConfirmationTool(name), true, `${name} must ask first`);
   }
 });
@@ -19,14 +19,22 @@ test("discovery tools run without a confirmation", () => {
   }
 });
 
+test("write_file says that the user sees the content before it is written", () => {
+  const write = COMPUTER_USE_TOOLS.find((tool) => tool.name === "write_file");
+  assert.ok(write, "write_file is registered");
+  assert.deepEqual(write.parameters.required, ["path", "content"]);
+  assert.match(write.description, /confirms first/i);
+});
+
 test("the content search tool says what it can and cannot read", () => {
   const search = COMPUTER_USE_TOOLS.find(
     (tool) => tool.name === "search_files_content"
   );
   assert.ok(search, "search_files_content is registered");
-  // Snippets come from text files only, so the model must be able to say that
-  // instead of promising it searched the user's PDFs.
-  assert.match(search.description, /text files only/i);
+  // Documents are unpacked, but a scan has no text: the model must be able to
+  // say which files it could not read instead of promising it read them all.
+  assert.match(search.description, /documents \(PDF, Word/i);
+  assert.match(search.description, /scanned PDFs have no text/i);
 });
 
 test("every tool is a named JSON-schema object with parameters", () => {

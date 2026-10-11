@@ -11,8 +11,16 @@ export const useToolCalling = () => {
   // Resolvers for action confirmations the agent turn is waiting on.
   const actionResolvers = useRef(new Map<string, (approved: boolean) => void>());
 
-  /** Clears both lists; called when a new turn starts. */
+  /**
+   * Clears both lists; called when a new turn starts. Any action still waiting
+   * is dismissed first: the loop is parked on that promise, and a new turn must
+   * not leave it waiting for a click that can no longer happen.
+   */
   const reset = useCallback(() => {
+    for (const resolve of actionResolvers.current.values()) {
+      resolve(false);
+    }
+    actionResolvers.current.clear();
     setToolActivities([]);
     setPendingActions([]);
   }, []);

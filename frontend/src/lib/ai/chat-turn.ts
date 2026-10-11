@@ -3,7 +3,7 @@
  * sidecar is selected, a plain stream otherwise. Both chat surfaces use it.
  */
 import { fetchAIResponse } from "./answer-stream.ts";
-import { runAgentTurn } from "./agent-loop.ts";
+import { runAgentTurn, runTextAgentTurn } from "./agent-loop.ts";
 import type { AgentActivity, PendingToolAction } from "./agent-loop.ts";
 import { shouldUsePiely } from "./piely-selection.ts";
 import type { Message, TYPE_PROVIDER } from "@/types";
@@ -61,7 +61,7 @@ export async function* streamChat(params: {
     approveAction,
   } = params;
 
-  if (target.usePiely && toolCallingEnabled) {
+  if (toolCallingEnabled && target.usePiely) {
     // Computer use: one user turn can span several model round-trips.
     for await (const event of runAgentTurn({
       systemPrompt,
@@ -70,6 +70,34 @@ export async function* streamChat(params: {
       images,
       signal,
       approveAction,
+    })) {
+      if (event.type === "text" || event.type === "activity") {
+        yield event;
+      }
+    }
+    return;
+  }
+
+  if (toolCallingEnabled) {
+    // A curl provider has no tool API, so the model asks in text and the result
+    // comes back as the next user message (see tools/tool-protocol.ts).
+    for await (const event of runTextAgentTurn({
+      systemPrompt,
+      history,
+      userMessage,
+      images,
+      signal,
+      approveAction,
+      streamText: (turn) =>
+        fetchAIResponse({
+          provider: target.provider,
+          selectedProvider,
+          systemPrompt: turn.systemPrompt,
+          history: turn.history as Message[],
+          userMessage: turn.userMessage,
+          images: turn.images,
+          signal: turn.signal,
+        }),
     })) {
       if (event.type === "text" || event.type === "activity") {
         yield event;

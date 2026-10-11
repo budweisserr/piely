@@ -19,6 +19,11 @@ Both run `npm install` in `frontend/` + `piely-agent/`, build whisper.cpp, and
 then drive the Tauri CLI from the repository root (that is where it finds
 `backend/`).
 
+Release bundles ship the compiled sidecar, so they need [bun](https://bun.sh);
+`./build.sh` compiles it and then runs its self check before bundling. A binary
+built without the OAuth flows fails that check here instead of at the user's
+first login.
+
 ## Test
 
 ```bash
@@ -45,7 +50,9 @@ frontend/                React + Vite
   src/lib/chat/          message ids and timings, history -> model messages, attachments
   src/lib/curl/          curl templates, response paths, validation
   src/lib/database/      SQLite: conversations, messages, system prompts
-  src/lib/{files,speech,storage,tools}/
+  src/lib/{files,speech,storage}/
+  src/lib/tools/         tool schema, the Rust executor map, the text protocol
+                         for models without native tool calls
   src/hooks/{chat,speech,providers,system}/
   src/pages/             one folder per screen
   test/                  the same paths, one file per module under test
@@ -57,6 +64,7 @@ backend/                 Tauri 2 / Rust (the crate is `backend/`)
   src/speech/            local whisper + system audio capture (VAD/continuous)
   src/agent/             the piely-agent sidecar bridge (process, bridge, commands)
   src/tools/             computer-use tools, policy + one file per tool
+                         (document_text unpacks PDFs and office files)
   src/db/                migrations
   test/                  the same paths under src/ (pulled in by #[path])
 piely-agent/             Node sidecar, speaks NDJSON over stdio (see its README)

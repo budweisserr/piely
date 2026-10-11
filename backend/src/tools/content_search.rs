@@ -1,16 +1,20 @@
 //! `search_files_content`: find a file by what is inside it. The only tool that
 //! reads contents, so the budget is explicit and the walk runs on a blocking
-//! thread. Binaries (PDFs, office files) are counted as skipped, not ignored.
+//! thread. Documents (PDF, office) are unpacked; other binaries are counted as
+//! skipped, not ignored.
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
+use super::document_text::{extract_text, is_document};
 use super::file_metadata::modified_ms;
 use super::limits::{
     DEFAULT_CONTENT_LIMIT, MAX_CONTENT_BYTES, MAX_CONTENT_FILES, MAX_CONTENT_FILE_BYTES,
-    MAX_CONTENT_LIMIT, MAX_SCAN_DEPTH, MAX_SNIPPETS_PER_FILE, MAX_SNIPPET_CHARS, SKIP_DIRS,
+    MAX_CONTENT_LIMIT, MAX_DOCUMENTS_EXTRACTED, MAX_DOCUMENT_BYTES, MAX_QUERY_CHARS,
+    MAX_QUERY_TERMS, MAX_SEARCH_SECONDS, MAX_SNIPPETS_PER_FILE, MAX_SNIPPET_CHARS, SKIP_DIRS,
 };
-use super::search_scope::search_roots;
+use super::search_scope::{resolve_roots, search_roots};
+use super::sensitive_paths::is_sensitive_path;
 
 // --- content search -------------------------------------------------------------
 
@@ -33,7 +37,11 @@ struct ContentMatch {
 /// user means when they describe what a document is about instead of its name.
 fn query_terms(query: &str) -> Vec<String> {
     query
+        .chars()
+        .take(MAX_QUERY_CHARS)
+        .collect::<String>()
         .split_whitespace()
+        .take(MAX_QUERY_TERMS)
         .map(str::to_lowercase)
         .filter(|term| !term.is_empty())
         .collect()
@@ -126,24 +134,17 @@ pub async fn tools_search_files_content(
         .clamp(1, MAX_CONTENT_LIMIT);
     let extensions = normalize_extensions(&extensions);
 
-    let roots = match directory {
-        Some(dir) => {
-            let path = PathBuf::from(&dir);
-            if !path.is_dir() {
-                return Err(format!("directory does not exist: {}", dir));
-            }
-            vec![(path, MAX_SCAN_DEPTH)]
-        }
-        None => search_roots(&app),
-    };
+    let (roots, note) = resolve_roots(search_roots(&app), directory)?;
 
     tauri::async_runtime::spawn_blocking(move || {
         let outcome = search_for_content(&roots, &terms, &extensions, limit);
 
         Ok(serde_json::json!({
             "query": query,
+            "note": note,
             "terms": terms,
             "files_scanned": outcome.files_scanned,
+            "documents_read": outcome.documents_read,
             "skipped_binary": outcome.skipped_binary,
             "truncated": outcome.truncated,
             "count": outcome.matches.len(),
@@ -159,6 +160,9 @@ pub async fn tools_search_files_content(
 struct ContentSearchOutcome {
     matches: Vec<ContentMatch>,
     files_scanned: usize,
+    /// PDFs and office files whose text was read (see document_text).
+    documents_read: usize,
+    /// Files with no readable text: images, archives, scanned PDFs.
     skipped_binary: usize,
     truncated: bool,
 }
@@ -174,12 +178,17 @@ fn search_for_content(
 ) -> ContentSearchOutcome {
     let mut outcome = ContentSearchOutcome::default();
     let mut bytes_scanned = 0u64;
+    let mut documents_extracted = 0usize;
     let hit_capacity = limit * 5;
+    let started = std::time::Instant::now();
 
     'roots: for (root, depth) in roots {
         let mut stack = vec![(root.clone(), *depth)];
         while let Some((dir, remaining)) = stack.pop() {
-            if outcome.files_scanned >= MAX_CONTENT_FILES || bytes_scanned >= MAX_CONTENT_BYTES {
+            if outcome.files_scanned >= MAX_CONTENT_FILES
+                || bytes_scanned >= MAX_CONTENT_BYTES
+                || started.elapsed().as_secs() >= MAX_SEARCH_SECONDS
+            {
                 outcome.truncated = true;
                 break 'roots;
             }
@@ -191,11 +200,16 @@ fn search_for_content(
                 if name.starts_with('.') {
                     continue;
                 }
+                // Same policy the reading tools use: no keys, tokens or .env
+                // files, whether or not the user was asked first.
+                if is_sensitive_path(&entry.path()) {
+                    continue;
+                }
                 let Ok(file_type) = entry.file_type() else {
                     continue;
                 };
                 if file_type.is_dir() {
-                    if SKIP_DIRS.contains(&name.as_str()) || remaining == 0 {
+                    if SKIP_DIRS.contains(name.as_str()) || remaining == 0 {
                         continue;
                     }
                     stack.push((entry.path(), remaining - 1));
@@ -207,22 +221,49 @@ fn search_for_content(
                 let Ok(meta) = entry.metadata() else {
                     continue;
                 };
-                if meta.len() == 0 || meta.len() > MAX_CONTENT_FILE_BYTES {
+                // A document is a zip of XML or a PDF, so it is allowed to be
+                // bigger than a text file and costs extraction instead of a read.
+                let document = is_document(&entry.path());
+                let size_cap = if document {
+                    MAX_DOCUMENT_BYTES
+                } else {
+                    MAX_CONTENT_FILE_BYTES
+                };
+                if meta.len() == 0 || meta.len() > size_cap {
+                    continue;
+                }
+                if document && documents_extracted >= MAX_DOCUMENTS_EXTRACTED {
+                    outcome.truncated = true;
                     continue;
                 }
 
                 outcome.files_scanned += 1;
-                bytes_scanned += meta.len();
 
-                let Ok(bytes) = std::fs::read(entry.path()) else {
-                    continue;
+                let text = if document {
+                    documents_extracted += 1;
+                    match extract_text(&entry.path()) {
+                        Some(text) => {
+                            outcome.documents_read += 1;
+                            text
+                        }
+                        None => {
+                            outcome.skipped_binary += 1;
+                            continue;
+                        }
+                    }
+                } else {
+                    let Ok(bytes) = std::fs::read(entry.path()) else {
+                        continue;
+                    };
+                    if !looks_like_text(&bytes) {
+                        outcome.skipped_binary += 1;
+                        continue;
+                    }
+                    String::from_utf8_lossy(&bytes).into_owned()
                 };
-                if !looks_like_text(&bytes) {
-                    outcome.skipped_binary += 1;
-                    continue;
-                }
+                bytes_scanned += text.len() as u64;
 
-                let scan = scan_text(&String::from_utf8_lossy(&bytes), terms);
+                let scan = scan_text(&text, terms);
                 if scan.terms_matched == 0 {
                     continue;
                 }

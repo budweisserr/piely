@@ -8,6 +8,7 @@ import { shouldUsePiely } from "./piely-selection.ts";
 import { buildEnhancedSystemPrompt } from "./system-prompt.ts";
 import { fetchPielyResponse } from "./piely-stream.ts";
 import { fetchCurlProviderResponse } from "./curl-provider.ts";
+import { explainProviderError } from "./provider-errors.ts";
 
 export async function* fetchAIResponse(params: {
   provider: TYPE_PROVIDER | undefined;
@@ -57,9 +58,9 @@ export async function* fetchAIResponse(params: {
     });
   } catch (error) {
     throw new Error(
-      `Error in fetchAIResponse: ${
+      explainProviderError(
         error instanceof Error ? error.message : "Unknown error"
-      }`
+      )
     );
   }
 }

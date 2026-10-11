@@ -70,6 +70,35 @@ pub(super) fn agent_path(app: &AppHandle) -> Result<PathBuf, String> {
     Err("piely-agent/agent.mjs not found. Ensure piely-agent is installed or set PIELY_AGENT_PATH.".to_string())
 }
 
+/// Runs `--selfcheck` on a compiled sidecar.
+///
+/// A bundle built without bun keeps whatever old binary was lying around, and
+/// that only shows up later as "Cannot find module './openai-codex.js'" at the
+/// first login. The binary can tell us itself, so ask it once before trusting
+/// it. Costs one process start; the agent is spawned once and then reused.
+pub(super) fn self_check(binary: &Path) -> Result<(), String> {
+    let output = std::process::Command::new(binary)
+        .arg("--selfcheck")
+        .output()
+        .map_err(|e| format!("could not run {}: {}", binary.display(), e))?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let detail = stderr
+        .lines()
+        .find(|line| line.contains("selfcheck failed"))
+        .or_else(|| stderr.lines().rev().find(|line| line.contains("rror")))
+        .unwrap_or("no output")
+        .trim();
+    Err(format!(
+        "{} did not pass its self check: {}",
+        binary.display(),
+        detail
+    ))
+}
+
 /// The sidecar as (program, args before --auth-file), in order of preference:
 /// 1. `PIELY_AGENT_PATH` (a binary, or a .mjs run with node)
 /// 2. the bundled resource (tauri copies it verbatim; `externalBin` would
@@ -86,6 +115,11 @@ pub(super) fn agent_command(app: &AppHandle) -> Result<(String, Vec<String>), St
             let node = find_node_bin();
             return Ok((node, vec![path]));
         }
+        // An explicit override is the user's call: report a failed check, still
+        // use it, so a broken binary can be debugged instead of being skipped.
+        if let Err(reason) = self_check(Path::new(&path)) {
+            eprintln!("[agent] PIELY_AGENT_PATH: {reason}");
+        }
         return Ok((path, vec![]));
     }
 
@@ -101,41 +135,64 @@ pub(super) fn agent_command(app: &AppHandle) -> Result<(String, Vec<String>), St
 
     // Release: the bundled resource is always named "piely-agent"
     // (tauri.conf.json); on Windows dev machines bun may also emit piely-agent.exe.
+    let mut rejected: Vec<String> = Vec::new();
     let candidates = ["piely-agent", "piely-agent.exe"];
+    let mut binaries: Vec<PathBuf> = Vec::new();
     if let Ok(dir) = app.path().resource_dir() {
-        for name in candidates {
-            let resource = dir.join(name);
-            if resource.exists() {
-                // squashfs (AppImage) may drop the exec bit; make sure we can run it
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(&resource, std::fs::Permissions::from_mode(0o755));
-                }
-                return Ok((resource.to_string_lossy().into_owned(), vec![]));
-            }
-        }
+        binaries.extend(candidates.iter().map(|name| dir.join(name)));
     }
     if let Some(dir) = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
     {
-        for name in candidates {
-            let bundled = dir.join(name);
-            if bundled.exists() {
-                return Ok((bundled.to_string_lossy().into_owned(), vec![]));
+        binaries.extend(candidates.iter().map(|name| dir.join(name)));
+    }
+    binaries.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../piely-agent/bin/piely-agent"),
+    );
+
+    for binary in binaries {
+        if !binary.exists() {
+            continue;
+        }
+        // squashfs (AppImage) may drop the exec bit; make sure we can run it
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755));
+        }
+        match self_check(&binary) {
+            Ok(()) => {
+                for reason in &rejected {
+                    eprintln!("[agent] skipped a sidecar: {reason}");
+                }
+                return Ok((binary.to_string_lossy().into_owned(), vec![]));
             }
+            Err(reason) => rejected.push(reason),
         }
     }
-    let dev_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../piely-agent/bin");
-    for name in ["piely-agent", "piely-agent.exe"] {
-        let dev_bin = dev_dir.join(name);
-        if dev_bin.exists() {
-            return Ok((dev_bin.to_string_lossy().into_owned(), vec![]));
+
+    // Nothing compiled and usable: fall back to the source (a dev checkout has
+    // it) and otherwise say why the binaries were refused.
+    if let Ok(path) = agent_path(app) {
+        let node = find_node_bin();
+        if !rejected.is_empty() {
+            eprintln!(
+                "[agent] no usable compiled sidecar, running agent.mjs with node: {}",
+                rejected.join("; ")
+            );
         }
+        return Ok((node, vec![path.to_string_lossy().into_owned()]));
     }
-    let node = find_node_bin();
-    Ok((node, vec![agent_path(app)?.to_string_lossy().into_owned()]))
+
+    Err(if rejected.is_empty() {
+        "piely-agent not found. Install it or set PIELY_AGENT_PATH.".to_string()
+    } else {
+        format!(
+            "no usable piely-agent. {}. Rebuild the sidecar with bun (./build.sh).",
+            rejected.join("; ")
+        )
+    })
 }
 
 pub(super) fn auth_file(app: &AppHandle) -> Result<PathBuf, String> {
@@ -173,3 +230,7 @@ pub(super) fn spawn_agent(app: &AppHandle) -> Result<(Child, ChildStdin, ChildSt
         .ok_or_else(|| "No agent stdout".to_string())?;
     Ok((child, stdin, stdout))
 }
+
+#[cfg(test)]
+#[path = "../../test/agent/process_factory.rs"]
+mod tests;

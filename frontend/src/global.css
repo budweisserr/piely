@@ -194,9 +194,17 @@ body {
 }
 
 /* Fix viewport overflow for markdown content */
-[data-streamdown="code-block"],
-[data-streamdown="table"] {
+[data-streamdown="code-block"] {
   max-width: 100% !important;
+  overflow-x: auto !important;
+}
+
+/*
+ * Tables are the exception: capping one at the panel width squeezes every cell
+ * (a long path or file name then wraps mid-token). Let it take its natural
+ * width and scroll instead - see the table rule further down.
+ */
+[data-streamdown="table"] {
   overflow-x: auto !important;
 }
 
@@ -257,10 +265,14 @@ body {
 
 .markdown-body table {
   display: block;
-  /* Natural column widths, scroll if wider than the panel: squeezing a table
-     into a narrow bubble turns every cell into a one-word-wide sliver. */
+  /*
+   * Natural column widths, scroll if wider than the panel: squeezing a table
+   * into a narrow bubble turns every cell into a one-word-wide sliver, and a
+   * `max-width: 100%` here would cap the table at the panel width so it never
+   * scrolls (measured in Chromium: the cells then wrap mid-token).
+   */
   width: max-content;
-  max-width: 100%;
+  max-width: none;
   overflow-x: auto;
 }
 

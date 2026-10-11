@@ -21,6 +21,10 @@ use super::state::PielyState;
 /// only a silent one.
 const AGENT_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// One NDJSON frame from the sidecar. A runaway line would otherwise be read
+/// into memory in full before anyone notices it is not valid JSON.
+const MAX_AGENT_FRAME_BYTES: usize = 8 * 1024 * 1024;
+
 /// One in-flight command: the reply channel plus the optional stream channel
 /// used to forward `chunk` / `tool_call` messages for that command only.
 struct InFlight {
@@ -101,6 +105,14 @@ fn ensure_agent(app: &AppHandle) -> Result<Arc<AgentHandle>, String> {
     tokio::spawn(async move {
         let mut lines = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = lines.next_line().await {
+            if line.len() > MAX_AGENT_FRAME_BYTES {
+                eprintln!(
+                    "[agent] dropping a {} byte frame (limit {})",
+                    line.len(),
+                    MAX_AGENT_FRAME_BYTES
+                );
+                continue;
+            }
             let msg: Value = match serde_json::from_str(&line) {
                 Ok(m) => m,
                 Err(_) => continue,

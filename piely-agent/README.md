@@ -99,4 +99,8 @@ Self check: `node agent.mjs --selfcheck`.
 ## Bundling
 
 For release builds, compile this into a single executable (`bun build --compile`) and point
-the Rust bridge at it via `PIELY_AGENT_PATH` / `PIELY_NODE_BIN`.
+the Rust bridge at it via `PIELY_AGENT_PATH` / `PIELY_NODE_BIN`. `./build.sh` does
+that, then runs `--selfcheck` on the result and refuses to bundle a binary that
+fails it. The Rust bridge runs the same check once per app start and skips a
+compiled sidecar that fails, so a stale bundle falls back to `agent.mjs` with
+node instead of failing later at login.

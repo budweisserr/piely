@@ -39,6 +39,10 @@ tauri-plugin-shell = "2.3.1"
 tauri-plugin-single-instance = "2"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-machine-uid = "0.1.2"
+# Document text extraction (tools/document_text.rs): office/ODF files are zip
+# archives, PDFs need a real parser. Deflate only: that is what these use.
+zip = { version = "3", default-features = false, features = ["deflate"] }
+pdf-extract = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-plugin-macos-permissions = "2"

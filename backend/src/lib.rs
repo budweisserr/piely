@@ -129,6 +129,7 @@ pub fn run() {
             tools::tools_search_files_content,
             tools::tools_list_directory,
             tools::tools_read_file,
+            tools::tools_write_file,
             tools::tools_list_apps,
             tools::tools_open_path,
             tools::tools_open_app,

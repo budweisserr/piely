@@ -77,126 +77,174 @@ const failed = (summary: string): ToolOutcome => ({
   isError: true,
 });
 
+type ToolArgs = Record<string, unknown>;
+type ToolHandler = (args: ToolArgs) => Promise<ToolOutcome>;
+
+/**
+ * name -> what it does. Adding a tool means one entry here and one in the
+ * definitions; the agent loop, the consent gate and the UI read the table
+ * instead of listing tools again.
+ */
+export const TOOL_HANDLERS: ReadonlyMap<string, ToolHandler> = new Map<
+  string,
+  ToolHandler
+>([
+  [
+    "find_files",
+    async (args) => {
+      const query = String(args.query ?? "").trim();
+      if (!query) return failed("find_files requires a query");
+      const data = await invoke<{ count: number; results: FileHit[] }>(
+        "tools_find_files",
+        {
+          query,
+          directory: args.directory ? String(args.directory) : null,
+          limit: typeof args.limit === "number" ? args.limit : null,
+        }
+      );
+      return succeeded(
+        data.count === 0
+          ? `No files found for "${query}"`
+          : `Found ${data.count} ${
+              data.count === 1 ? "file" : "files"
+            } matching "${query}"`,
+        data
+      );
+    },
+  ],
+  [
+    "search_files_content",
+    async (args) => {
+      const query = String(args.query ?? "").trim();
+      if (!query) return failed("search_files_content requires a query");
+      const data = await invoke<ContentSearchResult>(
+        "tools_search_files_content",
+        {
+          query,
+          directory: args.directory ? String(args.directory) : null,
+          extensions: Array.isArray(args.extensions)
+            ? args.extensions.map((ext) => String(ext))
+            : null,
+          limit: typeof args.limit === "number" ? args.limit : null,
+        }
+      );
+      if (data.count === 0) {
+        const skipped = data.skipped_binary
+          ? ` (${data.skipped_binary} non-text files skipped)`
+          : "";
+        return succeeded(
+          `Nothing mentions "${query}" in ${data.files_scanned} files${skipped}`,
+          data
+        );
+      }
+      return succeeded(
+        `${data.count} ${
+          data.count === 1 ? "file mentions" : "files mention"
+        } "${query}" (of ${data.files_scanned} files read)`,
+        data
+      );
+    },
+  ],
+  [
+    "list_directory",
+    async (args) => {
+      const data = await invoke<{
+        path: string;
+        count: number;
+        truncated: boolean;
+        entries: DirEntryInfo[];
+      }>("tools_list_directory", {
+        path: args.path ? String(args.path) : null,
+        depth: typeof args.depth === "number" ? args.depth : null,
+      });
+      return succeeded(`Listed ${data.count} entries in ${data.path}`, data);
+    },
+  ],
+  [
+    "read_file",
+    async (args) => {
+      const path = String(args.path ?? "").trim();
+      if (!path) return failed("read_file requires a path");
+      const preview = await invoke<FilePreview>("tools_read_file", {
+        path,
+        maxBytes: typeof args.max_bytes === "number" ? args.max_bytes : null,
+      });
+      const label = preview.name || preview.path;
+      return succeeded(
+        preview.kind === "directory"
+          ? `Listed ${preview.entries?.length ?? 0} entries in ${label}`
+          : `Previewed ${label} (${formatBytes(preview.size)})`,
+        preview
+      );
+    },
+  ],
+  [
+    "write_file",
+    async (args) => {
+      const path = String(args.path ?? "").trim();
+      if (!path) return failed("write_file requires a path");
+      if (typeof args.content !== "string") {
+        return failed("write_file requires content");
+      }
+      const result = await invoke<{
+        path: string;
+        bytes: number;
+        created: boolean;
+      }>("tools_write_file", {
+        path,
+        content: args.content,
+        overwrite: args.overwrite === true,
+      });
+      return succeeded(
+        `${result.created ? "Created" : "Replaced"} ${result.path} (${formatBytes(
+          result.bytes
+        )})`,
+        result
+      );
+    },
+  ],
+  [
+    "list_apps",
+    async (args) => {
+      const query = args.query ? String(args.query) : null;
+      const data = await invoke<{ count: number; results: AppEntry[] }>(
+        "tools_list_apps",
+        { query }
+      );
+      return succeeded(
+        query
+          ? `${data.count} applications matching "${query}"`
+          : `${data.count} applications installed`,
+        data
+      );
+    },
+  ],
+  [
+    "open_file",
+    async (args) => {
+      const path = String(args.path ?? "").trim();
+      if (!path) return failed("open_file requires a path");
+      await invoke("tools_open_path", { path });
+      return succeeded(`Opened ${path}`, { opened: path });
+    },
+  ],
+  [
+    "open_app",
+    async (args) => {
+      const name = String(args.name ?? "").trim();
+      if (!name) return failed("open_app requires a name");
+      await invoke("tools_open_app", { name });
+      return succeeded(`Launched ${name}`, { launched: name });
+    },
+  ],
+]);
+
 /** Runs one tool call in Rust and returns the text for the model. */
 export const runToolCall = async (call: ToolCall): Promise<ToolOutcome> => {
-  const args = call.arguments ?? {};
+  const handler = TOOL_HANDLERS.get(call.name);
+  if (!handler) return failed(`Unknown tool: ${call.name}`);
   try {
-    switch (call.name) {
-      case "find_files": {
-        const query = String(args.query ?? "").trim();
-        if (!query) return failed("find_files requires a query");
-        const data = await invoke<{ count: number; results: FileHit[] }>(
-          "tools_find_files",
-          {
-            query,
-            directory: args.directory ? String(args.directory) : null,
-            limit: typeof args.limit === "number" ? args.limit : null,
-          }
-        );
-        return succeeded(
-          data.count === 0
-            ? `No files found for "${query}"`
-            : `Found ${data.count} ${
-                data.count === 1 ? "file" : "files"
-              } matching "${query}"`,
-          data
-        );
-      }
-
-      case "search_files_content": {
-        const query = String(args.query ?? "").trim();
-        if (!query) return failed("search_files_content requires a query");
-        const data = await invoke<ContentSearchResult>(
-          "tools_search_files_content",
-          {
-            query,
-            directory: args.directory ? String(args.directory) : null,
-            extensions: Array.isArray(args.extensions)
-              ? args.extensions.map((ext) => String(ext))
-              : null,
-            limit: typeof args.limit === "number" ? args.limit : null,
-          }
-        );
-        if (data.count === 0) {
-          const skipped = data.skipped_binary
-            ? ` (${data.skipped_binary} non-text files skipped)`
-            : "";
-          return succeeded(
-            `Nothing mentions "${query}" in ${data.files_scanned} files${skipped}`,
-            data
-          );
-        }
-        return succeeded(
-          `${data.count} ${
-            data.count === 1 ? "file mentions" : "files mention"
-          } "${query}" (of ${data.files_scanned} files read)`,
-          data
-        );
-      }
-
-      case "list_directory": {
-        const data = await invoke<{
-          path: string;
-          count: number;
-          truncated: boolean;
-          entries: DirEntryInfo[];
-        }>("tools_list_directory", {
-          path: args.path ? String(args.path) : null,
-          depth: typeof args.depth === "number" ? args.depth : null,
-        });
-        return succeeded(
-          `Listed ${data.count} entries in ${data.path}`,
-          data
-        );
-      }
-
-      case "read_file": {
-        const path = String(args.path ?? "").trim();
-        if (!path) return failed("read_file requires a path");
-        const preview = await invoke<FilePreview>("tools_read_file", {
-          path,
-          maxBytes: typeof args.max_bytes === "number" ? args.max_bytes : null,
-        });
-        const label = preview.name || preview.path;
-        return succeeded(
-          preview.kind === "directory"
-            ? `Listed ${preview.entries?.length ?? 0} entries in ${label}`
-            : `Previewed ${label} (${formatBytes(preview.size)})`,
-          preview
-        );
-      }
-
-      case "list_apps": {
-        const query = args.query ? String(args.query) : null;
-        const data = await invoke<{ count: number; results: AppEntry[] }>(
-          "tools_list_apps",
-          { query }
-        );
-        return succeeded(
-          query
-            ? `${data.count} applications matching "${query}"`
-            : `${data.count} applications installed`,
-          data
-        );
-      }
-
-      case "open_file": {
-        const path = String(args.path ?? "").trim();
-        if (!path) return failed("open_file requires a path");
-        await invoke("tools_open_path", { path });
-        return succeeded(`Opened ${path}`, { opened: path });
-      }
-
-      case "open_app": {
-        const name = String(args.name ?? "").trim();
-        if (!name) return failed("open_app requires a name");
-        await invoke("tools_open_app", { name });
-        return succeeded(`Launched ${name}`, { launched: name });
-      }
-
-      default:
-        return failed(`Unknown tool: ${call.name}`);
-    }
+    return await handler(call.arguments ?? {});
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return failed(`${call.name} failed: ${message}`);

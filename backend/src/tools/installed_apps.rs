@@ -40,8 +40,12 @@ pub async fn tools_list_apps(
 
     Ok(serde_json::json!({ "count": apps.len(), "results": apps }))
 }
-pub(super) fn list_apps(app: &AppHandle) -> Vec<AppEntry> {
-    let mut apps = Vec::new();
+/// A .desktop file this big is not an app entry, it is someone's idea of a joke.
+const MAX_ENTRY_BYTES: u64 = 64 * 1024;
+
+/// The directories the OS keeps installed applications in. `open_app` only
+/// launches entries found here, so this list is policy, not just a search path.
+pub(super) fn app_dirs(app: &AppHandle) -> Vec<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         let mut dirs = vec![
@@ -51,9 +55,7 @@ pub(super) fn list_apps(app: &AppHandle) -> Vec<AppEntry> {
         if let Ok(home) = app.path().home_dir() {
             dirs.push(home.join("Applications"));
         }
-        for dir in dirs {
-            collect_bundles(&dir, &mut apps, 2);
-        }
+        return dirs;
     }
     #[cfg(target_os = "linux")]
     {
@@ -64,9 +66,31 @@ pub(super) fn list_apps(app: &AppHandle) -> Vec<AppEntry> {
         if let Ok(home) = app.path().home_dir() {
             dirs.push(home.join(".local/share/applications"));
         }
-        for dir in dirs {
-            collect_desktop_entries(&dir, &mut apps);
+        // Flatpak exports its entries into these, so they are installed too.
+        if let Ok(data) = std::env::var("XDG_DATA_DIRS") {
+            for base in data.split(':').filter(|part| !part.is_empty()) {
+                dirs.push(PathBuf::from(base).join("applications"));
+            }
         }
+        return dirs;
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = app;
+        Vec::new()
+    }
+}
+
+pub(super) fn list_apps(app: &AppHandle) -> Vec<AppEntry> {
+    let mut apps = Vec::new();
+    let dirs = app_dirs(app);
+    #[cfg(target_os = "macos")]
+    for dir in dirs {
+        collect_bundles(&dir, &mut apps, 2);
+    }
+    #[cfg(target_os = "linux")]
+    for dir in dirs {
+        collect_desktop_entries(&dir, &mut apps);
     }
     #[cfg(target_os = "windows")]
     {
@@ -115,6 +139,10 @@ fn collect_desktop_entries(dir: &Path, apps: &mut Vec<AppEntry>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("desktop") {
+            continue;
+        }
+        // A .desktop file is a handful of lines; a huge one is not an app entry.
+        if std::fs::metadata(&path).is_ok_and(|meta| meta.len() > MAX_ENTRY_BYTES) {
             continue;
         }
         let Ok(contents) = std::fs::read_to_string(&path) else {
