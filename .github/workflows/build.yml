@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - uses: oven-sh/setup-bun@v2
 
@@ -33,10 +33,17 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev libpulse-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libpulse-dev
 
       - name: Install frontend dependencies
-        run: npm install
+        run: npm --prefix frontend install
+
+      - name: Verify frontend
+        run: npm --prefix frontend test
+
+      - name: Verify Rust units
+        run: cargo test --lib
+        working-directory: backend
 
       - name: Build whisper.cpp
         run: |
@@ -55,15 +62,28 @@ jobs:
           # tauri bundles this as a resource under the plain name; bun appends .exe on Windows
           if [ -f piely-agent/bin/piely-agent.exe ]; then mv piely-agent/bin/piely-agent.exe piely-agent/bin/piely-agent; fi
 
+      - name: Verify pi sidecar
+        shell: bash
+        run: |
+          (cd piely-agent && npm test)
+
+      - name: Verify compiled pi sidecar
+        # Runs the self check inside the compiled binary: this is what catches a
+        # bundle that is missing pi-ai's OAuth flows (they are hidden from
+        # bundlers, so the dynamic import cannot resolve in a binary). Runs on
+        # every platform: a Windows-only import failure shipped once already.
+        shell: bash
+        run: ./piely-agent/bin/piely-agent --selfcheck
+
       - name: Stage sidecars for bundling
         shell: bash
         run: |
-          mkdir -p src-tauri/binaries
+          mkdir -p backend/binaries
           TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
           if [ -f whisper.cpp/build/bin/Release/whisper-cli.exe ]; then
-            cp whisper.cpp/build/bin/Release/whisper-cli.exe "src-tauri/binaries/whisper-cli-$TRIPLE.exe"
+            cp whisper.cpp/build/bin/Release/whisper-cli.exe "backend/binaries/whisper-cli-$TRIPLE.exe"
           else
-            cp whisper.cpp/build/bin/whisper-cli "src-tauri/binaries/whisper-cli-$TRIPLE"
+            cp whisper.cpp/build/bin/whisper-cli "backend/binaries/whisper-cli-$TRIPLE"
           fi
 
 
@@ -83,9 +103,9 @@ jobs:
           name: piely-${{ matrix.platform }}
           if-no-files-found: warn
           path: |
-            src-tauri/target/release/bundle/**/*.dmg
-            src-tauri/target/release/bundle/**/*.msi
-            src-tauri/target/release/bundle/**/*.exe
-            src-tauri/target/release/bundle/**/*.deb
-            src-tauri/target/release/bundle/**/*.rpm
-            src-tauri/target/release/bundle/**/*.AppImage
+            backend/target/release/bundle/**/*.dmg
+            backend/target/release/bundle/**/*.msi
+            backend/target/release/bundle/**/*.exe
+            backend/target/release/bundle/**/*.deb
+            backend/target/release/bundle/**/*.rpm
+            backend/target/release/bundle/**/*.AppImage

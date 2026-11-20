@@ -24,6 +24,9 @@ Unreviewed AI output submitted as-is will be rejected. "The AI wrote it" is not 
 - Base your work on `develop`; keep the diff as small as the change allows.
 - One PR = one logical change. Separate refactors from fixes.
 - Follow the existing style of the code you touch — formatting, naming, patterns.
+- Put new code where the [repository layout](README.md#repository-layout) says it goes; files are named after the job they do.
+- Keep tests out of source files: `frontend/test/` mirrors `frontend/src/`, `backend/test/` mirrors `backend/src/` (Rust source files end with `#[cfg(test)] #[path = "…"] mod tests;`).
+- Comments explain why, not what. If a line needs a paragraph, rename things instead.
 - Update docs (the [wiki](https://github.com/budweisserr/piely/wiki)) when the change affects behavior or setup.
 
 ### Every PR needs a description
