@@ -11,6 +11,6 @@
     "test": "node --test test"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "^1.1.0"
+    "@earendil-works/pi-ai": "^1.6.0"
   }
 }
